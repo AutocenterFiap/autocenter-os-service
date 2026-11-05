@@ -11,7 +11,9 @@ import br.com.autocenterfiap.osservice.application.port.OrdemServicoRepositoryPo
 import br.com.autocenterfiap.osservice.application.port.OutboxPort;
 import br.com.autocenterfiap.osservice.application.port.SagaRepositoryPort;
 import br.com.autocenterfiap.osservice.application.usecase.AbrirOrdemServicoUseCase;
+import br.com.autocenterfiap.osservice.application.usecase.ConsultarOrdemServicoUseCase;
 import br.com.autocenterfiap.osservice.application.usecase.ConsumirMensagemUseCase;
+import br.com.autocenterfiap.osservice.application.usecase.ExpirarPagamentosUseCase;
 import br.com.autocenterfiap.osservice.application.usecase.ProcessarGatilhoSagaUseCase;
 import java.time.Clock;
 import org.springframework.beans.factory.annotation.Value;
@@ -50,5 +52,17 @@ public class UseCaseConfig {
             MensagemProcessadaPort processadas, ProcessarGatilhoSagaUseCase processar,
             ObservabilidadePort observabilidade) {
         return new ConsumirMensagemUseCase(mapeador, ordens, processadas, processar, observabilidade);
+    }
+
+    @Bean
+    ConsultarOrdemServicoUseCase consultarOrdemServicoUseCase(OrdemServicoRepositoryPort ordens,
+            SagaRepositoryPort sagas, HistoricoRepositoryPort historico) {
+        return new ConsultarOrdemServicoUseCase(ordens, sagas, historico);
+    }
+
+    @Bean
+    ExpirarPagamentosUseCase expirarPagamentosUseCase(SagaRepositoryPort sagas,
+            ProcessarGatilhoSagaUseCase processar, Clock clock) {
+        return new ExpirarPagamentosUseCase(sagas, processar, clock);
     }
 }
