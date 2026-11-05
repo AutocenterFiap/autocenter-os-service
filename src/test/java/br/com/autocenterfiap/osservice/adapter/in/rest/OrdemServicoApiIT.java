@@ -3,6 +3,7 @@ package br.com.autocenterfiap.osservice.adapter.in.rest;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import br.com.autocenterfiap.osservice.ContainersConfig;
+import br.com.autocenterfiap.osservice.TokensTeste;
 import br.com.autocenterfiap.osservice.application.port.HistoricoRepositoryPort;
 import br.com.autocenterfiap.osservice.application.port.OrdemServicoRepositoryPort;
 import br.com.autocenterfiap.osservice.application.port.SagaRepositoryPort;
@@ -14,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -35,6 +37,11 @@ class OrdemServicoApiIT {
     private TestRestTemplate rest;
     @Autowired
     private JdbcTemplate jdbc;
+
+    @BeforeEach
+    void autenticar() {
+        TokensTeste.usar(rest, TokensTeste.administrativo());
+    }
     @Autowired
     private OrdemServicoRepositoryPort ordens;
     @Autowired

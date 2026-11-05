@@ -3,12 +3,14 @@ package br.com.autocenterfiap.osservice.adapter.in.rest;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import br.com.autocenterfiap.osservice.ContainersConfig;
+import br.com.autocenterfiap.osservice.TokensTeste;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -29,6 +31,11 @@ class AbrirOrdemServicoIT {
     private TestRestTemplate rest;
     @Autowired
     private JdbcTemplate jdbc;
+
+    @BeforeEach
+    void autenticar() {
+        TokensTeste.usar(rest, TokensTeste.administrativo());
+    }
 
     private Map<String, Object> corpo(long veiculoId, String problema) {
         return Map.of("clienteId", 1, "veiculoId", veiculoId, "problemaRelatado", problema);

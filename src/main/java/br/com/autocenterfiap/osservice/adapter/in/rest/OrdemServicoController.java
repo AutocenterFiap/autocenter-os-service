@@ -11,10 +11,14 @@ import br.com.autocenterfiap.osservice.application.usecase.ProcessarGatilhoSagaU
 import br.com.autocenterfiap.osservice.domain.enums.StatusOS;
 import br.com.autocenterfiap.osservice.domain.saga.Gatilho;
 import br.com.autocenterfiap.osservice.domain.saga.TipoGatilho;
+import br.com.autocenterfiap.osservice.application.exception.OrdemServicoNaoEncontradaException;
+import br.com.autocenterfiap.osservice.infrastructure.security.UsuarioToken;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -66,8 +70,19 @@ public class OrdemServicoController {
     }
 
     @GetMapping("/status/{id}")
-    public StatusResponse status(@PathVariable Long id) {
-        return StatusResponse.de(consultar.buscar(id));
+    public StatusResponse status(@PathVariable Long id, @AuthenticationPrincipal UsuarioToken usuario) {
+        if (!usuario.cliente()) {
+            return StatusResponse.de(consultar.buscar(id));
+        }
+        try {
+            var os = consultar.buscar(id);
+            if (usuario.clienteId() == null || !usuario.clienteId().equals(os.getClienteId())) {
+                throw new AccessDeniedException("OS de outro cliente");
+            }
+            return StatusResponse.de(os);
+        } catch (OrdemServicoNaoEncontradaException e) {
+            throw new AccessDeniedException("OS inexistente");
+        }
     }
 
     @GetMapping("/{id}/historico")
