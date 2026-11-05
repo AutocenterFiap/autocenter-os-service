@@ -31,14 +31,13 @@ public final class MaquinaEstadosSaga {
             case PAGAMENTO_CONFIRMADO -> confirmado(estado, gatilho);
             case PAGAMENTO_RECUSADO -> recusado(estado, gatilho);
             case PAGAMENTO_ESTORNADO -> estornado(estado, gatilho);
-            case PAGAMENTO_ESTORNO_FALHOU -> status == AGUARDANDO_ESTORNO || status == CANCELADA
-                ? Decisao.aceitar(List.of(), List.of(Acao.ALERTAR_ESTORNO_FALHOU)) : Decisao.ignorar();
+            case PAGAMENTO_ESTORNO_FALHOU -> Decisao.aceitar(List.of(), List.of(Acao.ALERTAR_ESTORNO_FALHOU));
             case EXECUCAO_INICIADA -> status == EM_EXECUCAO
                 ? Decisao.aceitar(List.of(), List.of()) : Decisao.ignorar();
             case EXECUCAO_FINALIZADA -> status == EM_EXECUCAO
                 ? Decisao.aceitar(List.of(CONCLUIDA), List.of(Acao.PUBLICAR_OS_CONCLUIDA)) : Decisao.ignorar();
             case EXECUCAO_FALHOU -> status == EM_EXECUCAO
-                ? Decisao.estornar(List.of(AGUARDANDO_ESTORNO), estado.pagamentoConfirmadoId(), "EXECUCAO_FALHOU")
+                ? Decisao.estornar(List.of(AGUARDANDO_ESTORNO), estado.pagamentoConfirmadoId(), "EXECUCAO_FALHOU", true)
                 : Decisao.ignorar();
             case PRAZO_VENCIDO -> status == AGUARDANDO_PAGAMENTO || status == PAGAMENTO_RECUSADO
                 ? Decisao.cancelar(List.of(CANCELADA), "LINK_EXPIRADO") : Decisao.ignorar();
@@ -46,9 +45,8 @@ public final class MaquinaEstadosSaga {
                 ? Decisao.aceitar(List.of(ENTREGUE), List.of(Acao.PUBLICAR_OS_ENTREGUE)) : Decisao.ignorar();
             case CANCELAMENTO_SOLICITADO -> status.podeCancelar()
                 ? Decisao.cancelar(List.of(CANCELADA), "CANCELAMENTO_SOLICITADO") : Decisao.ignorar();
-            case REPROCESSAR_ESTORNO -> (status == AGUARDANDO_ESTORNO || status == CANCELADA)
-                    && estado.estornoPendenteId() != null
-                ? Decisao.estornar(List.of(), estado.estornoPendenteId(), "REPROCESSAMENTO_MANUAL")
+            case REPROCESSAR_ESTORNO -> estado.estornoPendenteId() != null
+                ? Decisao.estornar(List.of(), estado.estornoPendenteId(), "REPROCESSAMENTO_MANUAL", false)
                 : Decisao.ignorar();
         };
     }
@@ -71,15 +69,17 @@ public final class MaquinaEstadosSaga {
     }
 
     private static Decisao confirmado(EstadoSaga estado, Gatilho gatilho) {
-        if (Objects.equals(gatilho.pagamentoId(), estado.pagamentoConfirmadoId())) {
+        if (Objects.equals(gatilho.pagamentoId(), estado.pagamentoConfirmadoId())
+                || Objects.equals(gatilho.pagamentoId(), estado.estornoPendenteId())) {
             return Decisao.ignorar();
         }
+        boolean semPendente = estado.estornoPendenteId() == null;
         return switch (estado.status()) {
             case AGUARDANDO_PAGAMENTO, PAGAMENTO_RECUSADO ->
                 Decisao.aceitar(List.of(EM_EXECUCAO), List.of(Acao.ENVIAR_INICIAR_REPARO));
-            case CANCELADA -> Decisao.estornar(List.of(), gatilho.pagamentoId(), "PAGAMENTO_ATRASADO");
+            case CANCELADA -> Decisao.estornar(List.of(), gatilho.pagamentoId(), "PAGAMENTO_ATRASADO", semPendente);
             case EM_EXECUCAO, AGUARDANDO_ESTORNO, CONCLUIDA, ENTREGUE ->
-                Decisao.estornar(List.of(), gatilho.pagamentoId(), "PAGAMENTO_DUPLICADO");
+                Decisao.estornar(List.of(), gatilho.pagamentoId(), "PAGAMENTO_DUPLICADO", semPendente);
             default -> Decisao.ignorar();
         };
     }
@@ -101,8 +101,9 @@ public final class MaquinaEstadosSaga {
             return Decisao.ignorar();
         }
         if (estado.status() == AGUARDANDO_ESTORNO) {
-            return Decisao.cancelar(List.of(CANCELADA), "EXECUCAO_FALHOU");
+            return new Decisao(true, List.of(CANCELADA), List.of(Acao.PUBLICAR_OS_CANCELADA), null,
+                "EXECUCAO_FALHOU", true, false);
         }
-        return new Decisao(true, List.of(), List.of(), null, null, true);
+        return new Decisao(true, List.of(), List.of(), null, null, true, false);
     }
 }

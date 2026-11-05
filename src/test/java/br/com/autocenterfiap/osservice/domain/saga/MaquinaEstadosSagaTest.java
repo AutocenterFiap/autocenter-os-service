@@ -27,7 +27,12 @@ class MaquinaEstadosSagaTest {
 
     private static Arguments linha(String nome, EstadoSaga e, Gatilho g, List<StatusOS> transicoes,
             List<Acao> acoes, String motivo) {
-        return Arguments.of(nome, e, g, transicoes, acoes, motivo);
+        return Arguments.of(nome, e, g, transicoes, acoes, motivo, null);
+    }
+
+    private static Arguments linhaE(String nome, Long estornar, EstadoSaga e, Gatilho g,
+            List<StatusOS> transicoes, List<Acao> acoes, String motivo) {
+        return Arguments.of(nome, e, g, transicoes, acoes, motivo, estornar);
     }
 
     static Stream<Arguments> tabela() {
@@ -75,7 +80,7 @@ class MaquinaEstadosSagaTest {
                 List.of(), List.of(), null),
             linha("execucao.finalizada", estado(EM_EXECUCAO, 1, 9L, null), Gatilho.de(EXECUCAO_FINALIZADA),
                 List.of(CONCLUIDA), List.of(Acao.PUBLICAR_OS_CONCLUIDA), null),
-            linha("execucao.falhou", estado(EM_EXECUCAO, 1, 9L, null), Gatilho.de(EXECUCAO_FALHOU),
+            linhaE("execucao.falhou", 9L, estado(EM_EXECUCAO, 1, 9L, null), Gatilho.de(EXECUCAO_FALHOU),
                 List.of(AGUARDANDO_ESTORNO), List.of(Acao.ENVIAR_ESTORNO), "EXECUCAO_FALHOU"),
             linha("estornado em aguardando estorno", estado(AGUARDANDO_ESTORNO, 1, 9L, 9L),
                 Gatilho.pagamento(PAGAMENTO_ESTORNADO, 9L, null, null),
@@ -83,12 +88,12 @@ class MaquinaEstadosSagaTest {
             linha("estorno-falhou aguardando estorno", estado(AGUARDANDO_ESTORNO, 1, 9L, 9L),
                 Gatilho.pagamento(PAGAMENTO_ESTORNO_FALHOU, 9L, null, "x"),
                 List.of(), List.of(Acao.ALERTAR_ESTORNO_FALHOU), null),
-            linha("reprocessar em aguardando estorno", estado(AGUARDANDO_ESTORNO, 1, 9L, 9L),
+            linhaE("reprocessar em aguardando estorno", 9L, estado(AGUARDANDO_ESTORNO, 1, 9L, 9L),
                 Gatilho.de(REPROCESSAR_ESTORNO),
                 List.of(), List.of(Acao.ENVIAR_ESTORNO), "REPROCESSAMENTO_MANUAL"),
-            linha("reprocessar em cancelada", estado(CANCELADA, 1, 9L, 8L), Gatilho.de(REPROCESSAR_ESTORNO),
+            linhaE("reprocessar em cancelada", 8L, estado(CANCELADA, 1, 9L, 8L), Gatilho.de(REPROCESSAR_ESTORNO),
                 List.of(), List.of(Acao.ENVIAR_ESTORNO), "REPROCESSAMENTO_MANUAL"),
-            linha("confirmado atrasado em cancelada", estado(CANCELADA, 1),
+            linhaE("confirmado atrasado em cancelada", 9L, estado(CANCELADA, 1),
                 Gatilho.pagamento(PAGAMENTO_CONFIRMADO, 9L, 1, null),
                 List.of(), List.of(Acao.ENVIAR_ESTORNO), "PAGAMENTO_ATRASADO"),
             linha("estornado em cancelada", estado(CANCELADA, 1, null, 9L),
@@ -96,16 +101,16 @@ class MaquinaEstadosSagaTest {
             linha("estorno-falhou em cancelada", estado(CANCELADA, 1, null, 9L),
                 Gatilho.pagamento(PAGAMENTO_ESTORNO_FALHOU, 9L, null, "x"),
                 List.of(), List.of(Acao.ALERTAR_ESTORNO_FALHOU), null),
-            linha("confirmado de outra cobranca em EM_EXECUCAO", estado(EM_EXECUCAO, 1, 8L, null),
+            linhaE("confirmado de outra cobranca em EM_EXECUCAO", 9L, estado(EM_EXECUCAO, 1, 8L, null),
                 Gatilho.pagamento(PAGAMENTO_CONFIRMADO, 9L, 1, null),
                 List.of(), List.of(Acao.ENVIAR_ESTORNO), "PAGAMENTO_DUPLICADO"),
-            linha("confirmado de outra cobranca em AGUARDANDO_ESTORNO", estado(AGUARDANDO_ESTORNO, 1, 8L, 8L),
+            linhaE("confirmado de outra cobranca em AGUARDANDO_ESTORNO", 9L, estado(AGUARDANDO_ESTORNO, 1, 8L, null),
                 Gatilho.pagamento(PAGAMENTO_CONFIRMADO, 9L, 1, null),
                 List.of(), List.of(Acao.ENVIAR_ESTORNO), "PAGAMENTO_DUPLICADO"),
-            linha("confirmado de outra cobranca em CONCLUIDA", estado(CONCLUIDA, 1, 8L, null),
+            linhaE("confirmado de outra cobranca em CONCLUIDA", 9L, estado(CONCLUIDA, 1, 8L, null),
                 Gatilho.pagamento(PAGAMENTO_CONFIRMADO, 9L, 1, null),
                 List.of(), List.of(Acao.ENVIAR_ESTORNO), "PAGAMENTO_DUPLICADO"),
-            linha("confirmado de outra cobranca em ENTREGUE", estado(ENTREGUE, 1, 8L, null),
+            linhaE("confirmado de outra cobranca em ENTREGUE", 9L, estado(ENTREGUE, 1, 8L, null),
                 Gatilho.pagamento(PAGAMENTO_CONFIRMADO, 9L, 1, null),
                 List.of(), List.of(Acao.ENVIAR_ESTORNO), "PAGAMENTO_DUPLICADO"),
             linha("entregar", estado(CONCLUIDA, 1, 9L, null), Gatilho.de(ENTREGA_SOLICITADA),
@@ -128,12 +133,13 @@ class MaquinaEstadosSagaTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("tabela")
     void tabelaDeTransicoes(String nome, EstadoSaga estado, Gatilho gatilho, List<StatusOS> transicoes,
-            List<Acao> acoes, String motivo) {
+            List<Acao> acoes, String motivo, Long estornar) {
         var d = decidir(estado, gatilho);
         assertThat(d.aceita()).isTrue();
         assertThat(d.transicoes()).containsExactlyElementsOf(transicoes);
         assertThat(d.acoes()).containsExactlyElementsOf(acoes);
         assertThat(d.motivoCancelamento()).isEqualTo(motivo);
+        assertThat(d.pagamentoAEstornar()).isEqualTo(estornar);
     }
 
     @Test
@@ -215,9 +221,16 @@ class MaquinaEstadosSagaTest {
     }
 
     @Test
-    void estornoEmAguardandoEstornoNaoLimpaPendenteExplicitamente() {
+    void estornoEmAguardandoEstornoCancelaELimpaPendente() {
         var d = decidir(estado(AGUARDANDO_ESTORNO, 1, 9L, 9L), Gatilho.pagamento(PAGAMENTO_ESTORNADO, 9L, null, null));
-        assertThat(d.limparEstornoPendente()).isFalse();
+        assertThat(d.transicoes()).containsExactly(CANCELADA);
+        assertThat(d.limparEstornoPendente()).isTrue();
+        assertThat(d.registrarEstornoPendente()).isFalse();
+    }
+
+    @Test
+    void reprocessarDepoisDoEstornoConfirmadoEIgnorado() {
+        assertThat(decidir(estado(CANCELADA, 1, 9L, null), Gatilho.de(REPROCESSAR_ESTORNO)).aceita()).isFalse();
     }
 
     @Test
@@ -227,20 +240,25 @@ class MaquinaEstadosSagaTest {
     }
 
     @Test
-    void estornoFalhouAlertaSemMudarStatus() {
-        for (var s : List.of(AGUARDANDO_ESTORNO, CANCELADA)) {
-            var d = decidir(estado(s, 1, 9L, 9L), Gatilho.pagamento(PAGAMENTO_ESTORNO_FALHOU, 9L, null, "x"));
+    void estornoFalhouAlertaEmQualquerStatusEId() {
+        for (var s : StatusOS.values()) {
+            var d = decidir(estado(s, 1, 9L, 9L), Gatilho.pagamento(PAGAMENTO_ESTORNO_FALHOU, 77L, null, "x"));
+            assertThat(d.aceita()).as(s.name()).isTrue();
             assertThat(d.transicoes()).isEmpty();
             assertThat(d.acoes()).containsExactly(Acao.ALERTAR_ESTORNO_FALHOU);
         }
-        assertThat(decidir(estado(EM_EXECUCAO, 1, 9L, null),
-            Gatilho.pagamento(PAGAMENTO_ESTORNO_FALHOU, 9L, null, "x")).aceita()).isFalse();
     }
 
     @Test
-    void reprocessarEnviaEstornoDoPendente() {
-        var d = decidir(estado(CANCELADA, 1, 9L, 8L), Gatilho.de(REPROCESSAR_ESTORNO));
-        assertThat(d.pagamentoAEstornar()).isEqualTo(8L);
+    void reprocessarEnviaEstornoDoPendenteEmQualquerStatus() {
+        for (var s : StatusOS.values()) {
+            var d = decidir(estado(s, 1, 9L, 8L), Gatilho.de(REPROCESSAR_ESTORNO));
+            assertThat(d.aceita()).as(s.name()).isTrue();
+            assertThat(d.transicoes()).isEmpty();
+            assertThat(d.acoes()).containsExactly(Acao.ENVIAR_ESTORNO);
+            assertThat(d.pagamentoAEstornar()).isEqualTo(8L);
+            assertThat(d.registrarEstornoPendente()).isFalse();
+        }
     }
 
     @Test
@@ -249,8 +267,33 @@ class MaquinaEstadosSagaTest {
     }
 
     @Test
-    void reprocessarEmOutroStatusEIgnorado() {
-        assertThat(decidir(estado(EM_EXECUCAO, 1, 9L, 8L), Gatilho.de(REPROCESSAR_ESTORNO)).aceita()).isFalse();
+    void execucaoFalhouRegistraEstornoPendente() {
+        assertThat(decidir(estado(EM_EXECUCAO, 1, 9L, null), Gatilho.de(EXECUCAO_FALHOU))
+            .registrarEstornoPendente()).isTrue();
+    }
+
+    @Test
+    void confirmacaoAtrasadaOuDuplicadaSemPendenteRegistra() {
+        assertThat(decidir(estado(CANCELADA, 1), Gatilho.pagamento(PAGAMENTO_CONFIRMADO, 9L, 1, null))
+            .registrarEstornoPendente()).isTrue();
+        assertThat(decidir(estado(EM_EXECUCAO, 1, 8L, null), Gatilho.pagamento(PAGAMENTO_CONFIRMADO, 9L, 1, null))
+            .registrarEstornoPendente()).isTrue();
+    }
+
+    @Test
+    void segundoEstornoSimultaneoNaoSobrescreveOPendente() {
+        var d = decidir(estado(AGUARDANDO_ESTORNO, 1, 8L, 8L), Gatilho.pagamento(PAGAMENTO_CONFIRMADO, 9L, 1, null));
+        assertThat(d.aceita()).isTrue();
+        assertThat(d.transicoes()).isEmpty();
+        assertThat(d.acoes()).containsExactly(Acao.ENVIAR_ESTORNO);
+        assertThat(d.pagamentoAEstornar()).isEqualTo(9L);
+        assertThat(d.registrarEstornoPendente()).isFalse();
+    }
+
+    @Test
+    void confirmacaoAtrasadaRepetidaEIgnorada() {
+        assertThat(decidir(estado(CANCELADA, 1, null, 9L), Gatilho.pagamento(PAGAMENTO_CONFIRMADO, 9L, 1, null))
+            .aceita()).isFalse();
     }
 
     @Test
