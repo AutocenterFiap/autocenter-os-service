@@ -1,3 +1,7 @@
 logging:
   level:
     br.com.autocenterfiap: DEBUG
+
+saga:
+  pagamento:
+    validade-minutos: 2
