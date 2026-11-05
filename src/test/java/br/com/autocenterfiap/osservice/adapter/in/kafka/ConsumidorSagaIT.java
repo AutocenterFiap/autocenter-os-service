@@ -168,14 +168,14 @@ class ConsumidorSagaIT {
     @Test
     void jsonInvalidoVaiParaDltSemBloquear() throws Exception {
         var osId = abrirOS();
+        colocarEm(osId, "EM_DIAGNOSTICO");
         var invalido = "isto nao e json " + UUID.randomUUID();
 
         publicar(Topicos.BILLING_EVENTOS, osId, invalido);
-        publicarEvento(Topicos.BILLING_EVENTOS, osId, "pagamento.estorno-falhou", Map.of("pagamentoId", 1));
-        publicarEvento(Topicos.EXECUCAO_EVENTOS, osId, "diagnostico.iniciado", Map.of());
+        publicarEvento(Topicos.BILLING_EVENTOS, osId, "orcamento.gerado", Map.of("orcamentoId", 55));
 
         esperarNaDlt("billing.eventos.dlt", invalido);
-        esperarStatus(osId, "EM_DIAGNOSTICO");
+        esperarStatus(osId, "AGUARDANDO_APROVACAO");
     }
 
     @Test

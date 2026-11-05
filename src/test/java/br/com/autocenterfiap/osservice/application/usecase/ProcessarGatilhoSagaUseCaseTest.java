@@ -31,6 +31,10 @@ import br.com.autocenterfiap.osservice.domain.saga.Gatilho;
 import br.com.autocenterfiap.osservice.domain.saga.RegistroHistorico;
 import br.com.autocenterfiap.osservice.domain.saga.SagaOS;
 import br.com.autocenterfiap.osservice.domain.saga.TipoGatilho;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.math.BigDecimal;
@@ -42,9 +46,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
 
 class ProcessarGatilhoSagaUseCaseTest {
 
@@ -61,10 +67,14 @@ class ProcessarGatilhoSagaUseCaseTest {
     private final OutboxPort outbox = mock(OutboxPort.class);
     private final ObservabilidadePort observabilidade = mock(ObservabilidadePort.class);
     private ProcessarGatilhoSagaUseCase useCase;
+    private final Logger logUseCase = (Logger) LoggerFactory.getLogger(ProcessarGatilhoSagaUseCase.class);
+    private final ListAppender<ILoggingEvent> log = new ListAppender<>();
     private SagaOS saga;
 
     @BeforeEach
     void preparar() {
+        log.start();
+        logUseCase.addAppender(log);
         var clock = Clock.fixed(AGORA, ZoneOffset.UTC);
         var fabrica = new MensagemSagaFactory(new ObjectMapper().registerModule(new JavaTimeModule()), clock, 30);
         useCase = new ProcessarGatilhoSagaUseCase(ordens, sagas, historico, outbox, fabrica, observabilidade,
@@ -78,6 +88,16 @@ class ProcessarGatilhoSagaUseCaseTest {
                 UUID.randomUUID(), ANTES, ANTES, 0L);
         when(ordens.buscarPorId(OS_ID)).thenReturn(Optional.of(os));
         return os;
+    }
+
+    @AfterEach
+    void soltarLog() {
+        logUseCase.detachAppender(log);
+    }
+
+    private List<String> alertas() {
+        return log.list.stream().filter(e -> e.getLevel() == Level.WARN).map(ILoggingEvent::getFormattedMessage)
+                .toList();
     }
 
     private List<MensagemSaida> mensagens(int quantidade) {
@@ -254,6 +274,48 @@ class ProcessarGatilhoSagaUseCaseTest {
         assertThat(msg.envelope().tipo()).isEqualTo("billing.estornar-pagamento");
         assertThat(msg.envelope().payload().get("pagamentoId").asLong()).isEqualTo(88L);
         assertThat(msg.envelope().payload().get("motivo").asText()).isEqualTo("PAGAMENTO_DUPLICADO");
+    }
+
+    @Test
+    void confirmacaoDuplicadaComVagaOcupadaAlertaSegundoEstorno() {
+        osEm(StatusOS.AGUARDANDO_ESTORNO);
+        saga.setPagamentoConfirmadoId(77L);
+        saga.setEstornoPendenteId(77L);
+
+        useCase.executar(OS_ID, Gatilho.pagamento(TipoGatilho.PAGAMENTO_CONFIRMADO, 88L, null, null),
+                TiposMensagem.PAGAMENTO_CONFIRMADO, null, Map.of("pagamentoId", 88L));
+
+        assertThat(alertas()).hasSize(1);
+        assertThat(alertas().get(0)).contains("77").contains("88");
+    }
+
+    @Test
+    void execucaoFalhouComVagaOcupadaEstornaOConfirmadoEAlerta() {
+        var os = osEm(StatusOS.EM_EXECUCAO);
+        saga.setPagamentoConfirmadoId(77L);
+        saga.setEstornoPendenteId(88L);
+
+        executar(TipoGatilho.EXECUCAO_FALHOU, TiposMensagem.EXECUCAO_FALHOU);
+
+        assertThat(os.getStatus()).isEqualTo(StatusOS.AGUARDANDO_ESTORNO);
+        assertThat(saga.getEstornoPendenteId()).isEqualTo(77L);
+        var msg = mensagens(1).get(0);
+        assertThat(msg.envelope().tipo()).isEqualTo("billing.estornar-pagamento");
+        assertThat(msg.envelope().payload().get("pagamentoId").asLong()).isEqualTo(77L);
+        assertThat(alertas()).hasSize(1);
+        assertThat(alertas().get(0)).contains("77").contains("88");
+    }
+
+    @Test
+    void estornoComVagaLivreOuDoMesmoPagamentoNaoAlerta() {
+        osEm(StatusOS.EM_EXECUCAO);
+        saga.setPagamentoConfirmadoId(77L);
+        executar(TipoGatilho.EXECUCAO_FALHOU, TiposMensagem.EXECUCAO_FALHOU);
+
+        executar(TipoGatilho.REPROCESSAR_ESTORNO, "reprocessar-estorno");
+
+        assertThat(saga.getEstornoPendenteId()).isEqualTo(77L);
+        assertThat(alertas()).isEmpty();
     }
 
     @Test

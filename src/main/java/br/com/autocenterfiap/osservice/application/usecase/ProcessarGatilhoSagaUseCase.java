@@ -145,11 +145,27 @@ public class ProcessarGatilhoSagaUseCase {
     }
 
     private static void aplicarEstorno(SagaOS saga, Decisao decisao) {
+        alertarSegundoEstorno(saga, decisao);
         if (decisao.registrarEstornoPendente()) {
             saga.setEstornoPendenteId(decisao.pagamentoAEstornar());
         }
         if (decisao.limparEstornoPendente()) {
             saga.setEstornoPendenteId(null);
+        }
+    }
+
+    private static void alertarSegundoEstorno(SagaOS saga, Decisao decisao) {
+        var pendente = saga.getEstornoPendenteId();
+        var estorno = decisao.pagamentoAEstornar();
+        if (pendente == null || estorno == null || pendente.equals(estorno)) {
+            return;
+        }
+        if (decisao.registrarEstornoPendente()) {
+            log.warn("Segundo estorno simultaneo na OS {}: pagamento {} sobrescreve a vaga do pagamento {}, "
+                    + "que fica sem reprocessamento", saga.getOsId(), estorno, pendente);
+        } else {
+            log.warn("Segundo estorno simultaneo na OS {}: pagamento {} sem vaga, ocupada pelo pagamento {}; "
+                    + "ele fica sem reprocessamento", saga.getOsId(), estorno, pendente);
         }
     }
 
