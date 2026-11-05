@@ -15,6 +15,7 @@ import br.com.autocenterfiap.osservice.application.mensagem.TiposMensagem;
 import br.com.autocenterfiap.osservice.application.mensagem.Topicos;
 import br.com.autocenterfiap.osservice.application.port.CadastroPort;
 import br.com.autocenterfiap.osservice.application.port.HistoricoRepositoryPort;
+import br.com.autocenterfiap.osservice.application.port.ObservabilidadePort;
 import br.com.autocenterfiap.osservice.application.port.OrdemServicoRepositoryPort;
 import br.com.autocenterfiap.osservice.application.port.OutboxPort;
 import br.com.autocenterfiap.osservice.application.port.SagaRepositoryPort;
@@ -40,13 +41,15 @@ class AbrirOrdemServicoUseCaseTest {
     private final SagaRepositoryPort sagaRepo = mock(SagaRepositoryPort.class);
     private final HistoricoRepositoryPort historico = mock(HistoricoRepositoryPort.class);
     private final OutboxPort outbox = mock(OutboxPort.class);
+    private final ObservabilidadePort observabilidade = mock(ObservabilidadePort.class);
     private AbrirOrdemServicoUseCase useCase;
 
     @BeforeEach
     void preparar() {
         var clock = Clock.fixed(AGORA, ZoneOffset.UTC);
         var fabrica = new MensagemSagaFactory(new ObjectMapper().registerModule(new JavaTimeModule()), clock, 30);
-        useCase = new AbrirOrdemServicoUseCase(cadastro, osRepo, sagaRepo, historico, outbox, fabrica, clock);
+        useCase = new AbrirOrdemServicoUseCase(cadastro, osRepo, sagaRepo, historico, outbox, fabrica,
+                observabilidade, clock);
         when(cadastro.clienteExiste(1L)).thenReturn(true);
         when(cadastro.veiculoExiste(2L)).thenReturn(true);
         when(osRepo.salvar(any())).thenAnswer(i -> {
@@ -82,6 +85,7 @@ class AbrirOrdemServicoUseCaseTest {
         assertThat(msg.getValue().topico()).isEqualTo(Topicos.OS_EVENTOS);
         assertThat(msg.getValue().envelope().tipo()).isEqualTo(TiposMensagem.OS_CRIADA);
         assertThat(msg.getValue().envelope().correlationId()).isEqualTo(os.getCorrelationId());
+        verify(observabilidade).osCriada();
     }
 
     @Test
@@ -91,7 +95,7 @@ class AbrirOrdemServicoUseCaseTest {
         assertThatThrownBy(() -> useCase.executar(1L, 2L, "x"))
                 .isInstanceOf(CadastroNaoEncontradoException.class);
 
-        verifyNoInteractions(osRepo, sagaRepo, historico, outbox);
+        verifyNoInteractions(osRepo, sagaRepo, historico, outbox, observabilidade);
     }
 
     @Test
@@ -101,6 +105,6 @@ class AbrirOrdemServicoUseCaseTest {
         assertThatThrownBy(() -> useCase.executar(1L, 2L, "x"))
                 .isInstanceOf(CadastroNaoEncontradoException.class);
 
-        verifyNoInteractions(osRepo, sagaRepo, historico, outbox);
+        verifyNoInteractions(osRepo, sagaRepo, historico, outbox, observabilidade);
     }
 }

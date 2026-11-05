@@ -5,6 +5,7 @@ import br.com.autocenterfiap.osservice.application.mensagem.MensagemSagaFactory;
 import br.com.autocenterfiap.osservice.application.mensagem.TiposMensagem;
 import br.com.autocenterfiap.osservice.application.port.CadastroPort;
 import br.com.autocenterfiap.osservice.application.port.HistoricoRepositoryPort;
+import br.com.autocenterfiap.osservice.application.port.ObservabilidadePort;
 import br.com.autocenterfiap.osservice.application.port.OrdemServicoRepositoryPort;
 import br.com.autocenterfiap.osservice.application.port.OutboxPort;
 import br.com.autocenterfiap.osservice.application.port.SagaRepositoryPort;
@@ -23,17 +24,19 @@ public class AbrirOrdemServicoUseCase {
     private final HistoricoRepositoryPort historico;
     private final OutboxPort outbox;
     private final MensagemSagaFactory fabrica;
+    private final ObservabilidadePort observabilidade;
     private final Clock clock;
 
     public AbrirOrdemServicoUseCase(CadastroPort cadastro, OrdemServicoRepositoryPort ordens,
             SagaRepositoryPort sagas, HistoricoRepositoryPort historico, OutboxPort outbox,
-            MensagemSagaFactory fabrica, Clock clock) {
+            MensagemSagaFactory fabrica, ObservabilidadePort observabilidade, Clock clock) {
         this.cadastro = cadastro;
         this.ordens = ordens;
         this.sagas = sagas;
         this.historico = historico;
         this.outbox = outbox;
         this.fabrica = fabrica;
+        this.observabilidade = observabilidade;
         this.clock = clock;
     }
 
@@ -52,6 +55,7 @@ public class AbrirOrdemServicoUseCase {
         historico.registrar(new RegistroHistorico(os.getId(), null, os.getStatus(), TiposMensagem.OS_CRIADA,
                 null, agora));
         outbox.guardar(fabrica.osCriada(os));
+        observabilidade.osCriada();
         return os;
     }
 }
