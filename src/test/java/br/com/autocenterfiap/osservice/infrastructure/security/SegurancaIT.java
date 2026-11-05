@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import br.com.autocenterfiap.osservice.ContainersConfig;
 import br.com.autocenterfiap.osservice.TokensTeste;
 import br.com.autocenterfiap.osservice.application.port.OrdemServicoRepositoryPort;
+import br.com.autocenterfiap.osservice.application.usecase.ConsultarOrdemServicoUseCase;
+import org.mockito.Mockito;
 import br.com.autocenterfiap.osservice.domain.entity.OrdemServico;
 import java.time.Instant;
 import java.util.List;
@@ -16,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpEntity;
@@ -41,6 +44,9 @@ class SegurancaIT {
     private TestRestTemplate rest;
     @Autowired
     private OrdemServicoRepositoryPort ordens;
+
+    @SpyBean
+    private ConsultarOrdemServicoUseCase consultar;
 
     @BeforeEach
     void limparInterceptors() {
@@ -158,5 +164,41 @@ class SegurancaIT {
             assertThat(rest.getForEntity(caminho, String.class).getStatusCode()).as(caminho)
                     .isEqualTo(HttpStatus.OK);
         }
+    }
+
+    @Test
+    void tokenSemExpiracaoRetorna401() {
+        assertErro(chamar(HttpMethod.GET, URL, TokensTeste.administrativoSemExpiracao(), null),
+                HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void errosDeUsuarioAutenticadoPreservamStatusReal() {
+        var t = TokensTeste.administrativo();
+
+        assertThat(chamar(HttpMethod.DELETE, URL + "/1", t, null).getStatusCode())
+                .isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
+        var h = new HttpHeaders();
+        h.setContentType(MediaType.TEXT_PLAIN);
+        h.setBearerAuth(t);
+        assertThat(rest.exchange(URL, HttpMethod.POST, new HttpEntity<>("x", h), String.class).getStatusCode())
+                .isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+        assertThat(chamar(HttpMethod.GET, URL + "/a/b/c/d", t, null).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void erroInternoRetorna500ENaoProvoca401() {
+        Mockito.doThrow(new RuntimeException("falha simulada")).when(consultar).listar(Mockito.any(),
+                Mockito.anyInt(), Mockito.anyInt());
+
+        assertThat(chamar(HttpMethod.GET, URL, TokensTeste.administrativo(), null).getStatusCode())
+                .isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    @Test
+    void erroDiretoContinuaNegado() {
+        assertErro(chamar(HttpMethod.GET, "/error", null, null), HttpStatus.UNAUTHORIZED);
+        assertErro(chamar(HttpMethod.GET, "/error", TokensTeste.administrativo(), null), HttpStatus.FORBIDDEN);
     }
 }

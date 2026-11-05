@@ -29,7 +29,7 @@ public class FiltroJwt extends OncePerRequestFilter {
     private final JWTVerifier verificador;
 
     public FiltroJwt(String segredo) {
-        this.verificador = JWT.require(Algorithm.HMAC256(segredo)).withIssuer(ISSUER).build();
+        this.verificador = JWT.require(Algorithm.HMAC256(segredo)).withIssuer(ISSUER).withClaimPresence("exp").build();
     }
 
     @Override

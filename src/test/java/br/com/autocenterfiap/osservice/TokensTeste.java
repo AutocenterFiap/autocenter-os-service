@@ -24,6 +24,10 @@ public final class TokensTeste {
                 .sign(Algorithm.HMAC256(segredo));
     }
 
+    public static String administrativoSemExpiracao() {
+        return JWT.create().withIssuer(ISSUER).withSubject("admin").sign(Algorithm.HMAC256(SEGREDO));
+    }
+
     public static String cliente(Long clienteId) {
         var jwt = JWT.create().withIssuer(ISSUER).withSubject("12345678901").withClaim("tipo", "cliente")
                 .withClaim("nome", "Cliente Teste").withIssuedAt(Date.from(Instant.now()))
