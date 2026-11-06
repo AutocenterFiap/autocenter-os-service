@@ -20,6 +20,7 @@ class MicrometerObservabilidadeAdapterTest {
         adapter.sagaCompensada("LINK_EXPIRADO");
         adapter.eventoDescartado("evento.qualquer");
         adapter.estornoFalhou();
+        adapter.mensagemDlt();
 
         assertThat(registro.get("autocenter.os.criada.total").counter().count()).isEqualTo(1);
         assertThat(registro.get("autocenter.os.status.total").tag("status", "CANCELADA").counter().count())
@@ -29,6 +30,7 @@ class MicrometerObservabilidadeAdapterTest {
         assertThat(registro.get("autocenter.saga.evento_descartado.total").tag("tipo", "evento.qualquer")
                 .counter().count()).isEqualTo(1);
         assertThat(registro.get("autocenter.saga.estorno_falhou.total").counter().count()).isEqualTo(1);
+        assertThat(registro.get("autocenter.saga.mensagem_dlt.total").counter().count()).isEqualTo(1);
     }
 
     @Test

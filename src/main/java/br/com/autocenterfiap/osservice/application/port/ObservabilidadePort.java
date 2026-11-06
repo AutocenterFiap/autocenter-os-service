@@ -16,4 +16,6 @@ public interface ObservabilidadePort {
     void eventoDescartado(String tipo);
 
     void estornoFalhou();
+
+    void mensagemDlt();
 }

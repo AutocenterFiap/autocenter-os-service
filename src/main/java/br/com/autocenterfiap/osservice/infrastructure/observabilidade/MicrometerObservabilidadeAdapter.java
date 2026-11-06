@@ -44,4 +44,9 @@ public class MicrometerObservabilidadeAdapter implements ObservabilidadePort {
     public void estornoFalhou() {
         registro.counter("autocenter.saga.estorno_falhou.total").increment();
     }
+
+    @Override
+    public void mensagemDlt() {
+        registro.counter("autocenter.saga.mensagem_dlt.total").increment();
+    }
 }

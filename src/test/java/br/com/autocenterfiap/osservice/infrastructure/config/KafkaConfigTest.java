@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import br.com.autocenterfiap.osservice.application.exception.MensagemInvalidaException;
+import br.com.autocenterfiap.osservice.application.port.ObservabilidadePort;
 import com.fasterxml.jackson.core.JsonParseException;
 import java.time.Duration;
 import java.util.List;
@@ -35,6 +36,7 @@ class KafkaConfigTest {
     private final MessageListenerContainer container = mock(MessageListenerContainer.class);
     private final ConsumerRecord<String, String> registro =
             new ConsumerRecord<>("billing.eventos", 2, 40L, "10", "conteudo");
+    private final ObservabilidadePort observabilidade = mock(ObservabilidadePort.class);
     private DefaultErrorHandler tratador;
 
     @BeforeEach
@@ -44,7 +46,7 @@ class KafkaConfigTest {
                 new PartitionInfo("billing.eventos.dlt", 0, null, null, null),
                 new PartitionInfo("billing.eventos.dlt", 1, null, null, null),
                 new PartitionInfo("billing.eventos.dlt", 2, null, null, null)));
-        tratador = new KafkaConfig().tratadorDeErrosKafka(template);
+        tratador = new KafkaConfig().tratadorDeErrosKafka(template, observabilidade);
     }
 
     private void falhar(Exception causa) {
@@ -69,6 +71,14 @@ class KafkaConfigTest {
     }
 
     @Test
+    void mensagemEnviadaParaDltIncrementaAMetricaEAindaChegaNela() {
+        falhar(new MensagemInvalidaException("pagamento.confirmado sem pagamentoId"));
+
+        verify(observabilidade).mensagemDlt();
+        assertThat(enviado().topic()).isEqualTo("billing.eventos.dlt");
+    }
+
+    @Test
     void mensagemInvalidaVaiDiretoParaDlt() {
         falhar(new MensagemInvalidaException("pagamento.confirmado sem pagamentoId"));
 
@@ -82,9 +92,11 @@ class KafkaConfigTest {
         for (int tentativa = 1; tentativa <= 3; tentativa++) {
             assertThatThrownBy(() -> falhar(conflito)).as("retentativa " + tentativa).isNotNull();
             verify(template, never()).send(any(ProducerRecord.class));
+            verify(observabilidade, never()).mensagemDlt();
         }
         falhar(conflito);
 
+        verify(observabilidade).mensagemDlt();
         assertThat(enviado().topic()).isEqualTo("billing.eventos.dlt");
     }
 
