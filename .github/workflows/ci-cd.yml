@@ -1,0 +1,102 @@
+name: CI/CD - OS Service
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  JAVA_VERSION: '21'
+  IMAGE_NAME: os-service
+  KIND_CONTEXT: kind-autocenter
+  KIND_CLUSTER: autocenter
+  K8S_NAMESPACE: autocenter
+
+jobs:
+  build-test:
+    name: build-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Build e testes
+        run: mvn -B verify
+
+      - name: Publicar relatorio JaCoCo
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco
+          path: target/site/jacoco
+          if-no-files-found: warn
+
+  sonar:
+    name: sonar
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Verify e analise Sonar
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: >
+          mvn -B verify sonar:sonar
+          -Dsonar.host.url=https://sonarcloud.io
+          -Dsonar.organization=autocenterfiap
+          -Dsonar.projectKey=AutocenterFiap_autocenter-os-service
+          -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+          -Dsonar.qualitygate.wait=true
+
+  deploy:
+    name: deploy
+    needs: [build-test, sonar]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: self-hosted
+    concurrency:
+      group: deploy-os-service
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Garantir que o contexto kind existe
+        run: |
+          if ! kubectl config get-contexts -o name | grep -qx "$KIND_CONTEXT"; then
+            echo "::error::Contexto $KIND_CONTEXT nao existe neste runner. Abortando antes de qualquer acao."
+            exit 1
+          fi
+
+      - name: Build da imagem (tag = SHA do commit)
+        run: docker build -f docker/Dockerfile -t "$IMAGE_NAME:${{ github.sha }}" .
+
+      - name: Carregar a imagem no kind
+        run: kind load docker-image "$IMAGE_NAME:${{ github.sha }}" --name "$KIND_CLUSTER"
+
+      - name: Aplicar manifestos com a imagem do commit
+        run: |
+          rm -rf "$RUNNER_TEMP/k8s"
+          cp -r k8s "$RUNNER_TEMP/k8s"
+          printf '\nimages:\n  - name: %s\n    newTag: "%s"\n' \
+            "$IMAGE_NAME" "${{ github.sha }}" >> "$RUNNER_TEMP/k8s/kustomization.yaml"
+          kubectl --context "$KIND_CONTEXT" apply -k "$RUNNER_TEMP/k8s"
+
+      - name: Aguardar o rollout
+        run: kubectl --context "$KIND_CONTEXT" -n "$K8S_NAMESPACE" rollout status deploy/os-service --timeout=180s

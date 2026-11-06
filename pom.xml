@@ -16,6 +16,11 @@
 	<properties>
 		<java.version>21</java.version>
 		<testcontainers.version>1.21.4</testcontainers.version>
+		<sonar.host.url>https://sonarcloud.io</sonar.host.url>
+		<sonar.organization>autocenterfiap</sonar.organization>
+		<sonar.projectKey>AutocenterFiap_autocenter-os-service</sonar.projectKey>
+		<sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+		<sonar.coverage.exclusions>**/OsServiceApplication.java,**/dto/**,**/entity/*JpaEntity*</sonar.coverage.exclusions>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -141,6 +146,15 @@
 	</dependencies>
 
 	<build>
+		<pluginManagement>
+			<plugins>
+				<plugin>
+					<groupId>org.sonarsource.scanner.maven</groupId>
+					<artifactId>sonar-maven-plugin</artifactId>
+					<version>5.1.0.4751</version>
+				</plugin>
+			</plugins>
+		</pluginManagement>
 		<plugins>
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
