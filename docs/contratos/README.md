@@ -20,6 +20,10 @@ kubectl --context kind-autocenter -n autocenter create secret generic os-service
 ```
 As credenciais do MySQL (`os-mysql`) e o segredo do JWT vem todos desse Secret.
 
+**Atencao, segredo do JWT:** a secao 7 da spec exige o **mesmo** segredo HS256 do monolito. O comando acima gera um
+aleatorio, que so aceita tokens de `scripts/gerar-token.sh`: tokens reais do login do monolito dao 401 ate os dois
+segredos coincidirem. Na integracao, use em `SISTEMA_SEGURANCA_CHAVE_SECRETA` o valor configurado no monolito.
+
 ### 2. Imagem e aplicacao
 ```bash
 docker build -f docker/Dockerfile -t os-service:local .
@@ -43,6 +47,14 @@ kubectl --context kind-autocenter -n autocenter rollout status deploy/os-service
 - Probes e `/actuator/prometheus` respondem sem token (liberados no `ConfiguracaoSeguranca`).
 - O Ingress expoe so `/v1/ordem-servicos`; os endpoints `/actuator` nao saem do cluster.
 - `cadastro.modo` continua `stub`.
+- **Prazo curto para demonstrar a expiracao:** use `SAGA_PAGAMENTO_VALIDADE_MINUTOS`, nao o perfil `demo`. O `ENTRYPOINT`
+  da imagem passa `-Dspring.profiles.active=prod`, e propriedade de sistema vence `SPRING_PROFILES_ACTIVE`: o perfil
+  `demo` nunca ativa em container. Para voltar ao padrao de 30 minutos, repita com `SAGA_PAGAMENTO_VALIDADE_MINUTOS-`:
+  ```bash
+  kubectl --context kind-autocenter -n autocenter set env deploy/os-service SAGA_PAGAMENTO_VALIDADE_MINUTOS=2
+  ```
+  Vale para cobrancas novas. O agendador roda a cada 30 s, entao o cancelamento vem ate 30 s depois do prazo. No
+  docker-compose, exporte a mesma variavel antes de subir.
 
 ## Simulador (Billing e Execucao)
 
@@ -55,13 +67,55 @@ curl -s localhost/v1/ordem-servicos/status/1 -H "Authorization: Bearer $T"   # E
 ```
 `publicar-evento.sh` publica via `kubectl exec kafka-0`, com chave Kafka = `osId`, no topico
 certo (`billing.eventos` para `orcamento.*` e `pagamento.*`; `execucao.eventos` para
-`diagnostico.*` e `execucao.*`), e injeta `eventId` (UUID novo) e `ocorridoEm` (UTC). Use
-`CORRELATION_ID=<uuid>` para manter o mesmo `correlationId` da OS. Tipo desconhecido sai com codigo 2.
+`diagnostico.*` e `execucao.*`), e injeta `eventId` (UUID novo) e `ocorridoEm` (UTC). Tipo desconhecido sai com
+codigo 2. Variaveis opcionais:
+
+| Variavel | Efeito |
+|---|---|
+| `CORRELATION_ID` | `correlationId` do envelope. O valor da OS vem do campo `correlationId` de `POST /v1/ordem-servicos` e `GET /v1/ordem-servicos/{id}`. Sem ela, o script gera um UUID novo. |
+| `TENTATIVA` | Sobrescreve `payload.tentativa` (`pagamento.recusado`, `pagamento.link-gerado`). |
+| `PAGAMENTO_ID` | Sobrescreve `payload.pagamentoId` (tipos `pagamento.*`). |
+
+Os logs da OS sempre saem com o `correlationId` gravado nela (MDC), inclusive os do REST e do agendador, entao ele
+filtra a saga inteira: `kubectl --context kind-autocenter -n autocenter logs deploy/os-service | grep <correlationId>`.
+Passar `CORRELATION_ID` faz o evento bater com o da OS tambem no envelope e nos logs anteriores ao processamento
+(mensagem repetida, por exemplo).
+
+### Tres recusas cancelam a OS
+`pagamento.recusado` so vale com `tentativa` igual a tentativa atual da saga, e a cobranca seguinte so reabre o pagamento
+depois de `pagamento.link-gerado`. A partir de uma OS recem-aberta:
+```bash
+ID=1   # id devolvido pelo POST
+P="scripts/publicar-evento.sh"
+$P diagnostico.iniciado $ID; $P diagnostico.concluido $ID; $P orcamento.gerado $ID; $P orcamento.aprovado $ID
+$P pagamento.link-gerado $ID                                  # AGUARDANDO_PAGAMENTO, tentativa 1
+TENTATIVA=1 $P pagamento.recusado $ID                         # PAGAMENTO_RECUSADO, novo billing.gerar-cobranca
+TENTATIVA=2 PAGAMENTO_ID=9002 $P pagamento.link-gerado $ID    # AGUARDANDO_PAGAMENTO
+TENTATIVA=2 PAGAMENTO_ID=9002 $P pagamento.recusado $ID       # PAGAMENTO_RECUSADO
+TENTATIVA=3 PAGAMENTO_ID=9003 $P pagamento.link-gerado $ID    # AGUARDANDO_PAGAMENTO
+TENTATIVA=3 PAGAMENTO_ID=9003 $P pagamento.recusado $ID       # CANCELADA (PAGAMENTO_RECUSADO_LIMITE)
+```
+
+### Estorno
+`pagamento.estornado` e `pagamento.estorno-falhou` entram no historico (`GET /{id}/historico`) mesmo sem mudar o status.
+`GET /{id}` e `GET /numero/{numero}` trazem `estornoPendente` (`true` enquanto ha estorno a confirmar; so nessas rotas,
+pois a lista e a abertura nao leem a saga).
+
+### Cuidado: `diagnostico.concluido` repetido
+Repetir `diagnostico.concluido` com **novo** `eventId` enquanto a OS esta em `EM_DIAGNOSTICO` nao e idempotente: a OS
+troca os itens pelos da nova mensagem e sai um segundo `billing.gerar-orcamento`. Como o simulador sempre gera um id
+novo, rodar o script duas vezes tem esse efeito.
 
 Para publicar o mesmo `eventId` de novo (testar idempotencia) publique manualmente com
 `kafka-console-producer.sh`; o script sempre gera um id novo.
 
 ## docker-compose
-`docker/docker-compose.yml` sobe MySQL e Kafka KRaft e o servico `kafka-topicos`, que cria os 5
+`docker/docker-compose.yml` sobe MySQL, Kafka KRaft, o servico `kafka-topicos`, que cria os 5
 topicos e 2 DLTs com 3 particoes (a DLT publica na mesma particao da mensagem original; com 1
-particao as particoes 1 e 2 falhariam). Ele usa `localhost:9092` e `localhost:3306`.
+particao as particoes 1 e 2 falhariam), e o `os-service`. No host, usa `localhost:3306`,
+`localhost:9092` e `localhost:8098`; entre containers, o Kafka responde em `kafka:29092`.
+
+`SISTEMA_SEGURANCA_CHAVE_SECRETA` e obrigatoria, sem valor versionado: exporte no shell ou
+grave em `docker/.env` (ignorado pelo git). Para rodar o servico pelo Maven, suba so a infra:
+`docker compose -f docker/docker-compose.yml up -d mysql kafka kafka-topicos`.
+`scripts/publicar-evento.sh` e `scripts/gerar-token.sh` falam com o cluster kind, nao com o compose.

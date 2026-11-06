@@ -31,10 +31,20 @@ flowchart LR
 
 **Testes:** `mvn -B verify` (precisa de Docker: Testcontainers sobe MySQL e Kafka).
 
-**Local com docker-compose** (MySQL e Kafka; o servico roda pelo Maven):
+**Local com docker-compose.** `SISTEMA_SEGURANCA_CHAVE_SECRETA` (segredo HS256 do JWT) nao tem valor padrao: sem ela, o
+compose recusa subir e o servico nao inicia. Um valor aleatorio basta para testar; para aceitar tokens reais do monolito
+ele precisa ser o mesmo segredo (ver [`docs/contratos/README.md`](docs/contratos/README.md)).
 ```bash
-docker compose -f docker/docker-compose.yml up -d
+export SISTEMA_SEGURANCA_CHAVE_SECRETA="$(openssl rand -hex 32)"
+```
+Com o servico pelo Maven (so MySQL e Kafka no compose):
+```bash
+docker compose -f docker/docker-compose.yml up -d mysql kafka kafka-topicos
 mvn spring-boot:run          # porta 8098; perfil demo: -Dspring-boot.run.profiles=demo (link expira em 2 min)
+```
+Ou tudo em containers, inclusive o servico (imagem com perfil `prod`, logs em JSON, tambem na porta 8098):
+```bash
+docker compose -f docker/docker-compose.yml up -d --build
 ```
 
 **No cluster kind** (infra em `autocenter-k8s-infra`: `./scripts/criar-cluster.sh`). Todo comando usa
@@ -65,12 +75,12 @@ Resultado de `mvn -B verify` (BUILD SUCCESS, gate de 80% de linhas do JaCoCo ate
 
 | Metrica | Cobertas / total | % |
 |---|---|---|
-| Linhas | 794 / 808 | 98,3 |
-| Instrucoes | 4185 / 4250 | 98,5 |
-| Branches | 262 / 279 | 93,9 |
-| Metodos | 236 / 240 | 98,3 |
+| Linhas | 816 / 829 | 98,4 |
+| Instrucoes | 4297 / 4354 | 98,7 |
+| Branches | 268 / 285 | 94,0 |
+| Metodos | 240 / 243 | 98,8 |
 
-Testes: 199 unitarios (Surefire) e 52 de integracao e BDD (Failsafe: Testcontainers com MySQL e Kafka, mais os cenarios
+Testes: 207 unitarios (Surefire) e 55 de integracao e BDD (Failsafe: Testcontainers com MySQL e Kafka, mais os cenarios
 Cucumber da Saga), todos passando. Excluidos da medicao: `OsServiceApplication`, DTOs e entidades JPA.
 
 ## Contrato de mensagens
@@ -91,6 +101,8 @@ Um `{ "itens": {} }` (campos ausentes) e mensagem invalida: nao e retentada e va
 - Entrega real de traces e metricas ao Datadog: o tracer esta na imagem, mas `DD_TRACE_ENABLED=false` e nao ha agente
   no cluster.
 - O pipeline no GitHub: `.github/workflows/ci-cd.yml` nunca rodou (passou por `actionlint`, mas nao foi executado).
-  Passos manuais em [`docs/setup-github.md`](docs/setup-github.md). O projeto SonarCloud tambem nao foi criado.
+  Passos manuais em [`docs/setup-github.md`](docs/setup-github.md). O projeto SonarCloud tambem nao foi criado:
+  `autocenterfiap` (organizacao) e `AutocenterFiap_autocenter-os-service` (projectKey) sao palpites, a confirmar em
+  sonarcloud.io e a corrigir em 3 lugares: `pom.xml`, `.github/workflows/ci-cd.yml` e `sonar-project.properties`.
 - Integracao com o Billing e a Execucao reais: so foi testada com dubles nos testes e com o simulador de eventos.
 - O Cadastro esta em stub (`cadastro.modo=stub`): qualquer cliente e veiculo sao aceitos.

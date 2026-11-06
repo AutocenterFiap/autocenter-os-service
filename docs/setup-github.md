@@ -23,9 +23,13 @@ antes o push de uma `main` inicial). O PR dispara `build-test` e `sonar`.
 
 ## 3. SonarCloud
 
-1. Em sonarcloud.io, entre com o GitHub, importe a organizacao `AutocenterFiap` (chave `autocenterfiap`) e crie o
-   projeto `autocenter-os-service` (chave `AutocenterFiap_autocenter-os-service`). Se a chave gerada for outra, ajuste
-   `pom.xml`, `sonar-project.properties` e o `ci-cd.yml`.
+**Atencao:** a organizacao `autocenterfiap` e o projectKey `AutocenterFiap_autocenter-os-service` versionados sao
+**palpites**: nada foi criado no SonarCloud. Confirme os valores reais em sonarcloud.io e, se forem outros, troque nos 3
+lugares: `pom.xml` (`sonar.organization`, `sonar.projectKey`), `.github/workflows/ci-cd.yml` (`-Dsonar.organization`,
+`-Dsonar.projectKey`) e `sonar-project.properties`.
+
+1. Em sonarcloud.io, entre com o GitHub, importe a organizacao `AutocenterFiap` e crie o projeto
+   `autocenter-os-service`. Anote a chave da organizacao e o projectKey gerados e compare com os palpites acima.
 2. Em *My Account > Security*, gere um token.
 3. No repositorio: *Settings > Secrets and variables > Actions > New repository secret*, nome `SONAR_TOKEN`.
 4. Desligue a *Automatic Analysis* do projeto (ela conflita com a analise do CI).

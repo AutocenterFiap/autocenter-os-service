@@ -46,7 +46,7 @@ Alem disso, `POST /{id}/cancelar` cancela qualquer OS antes de `EM_EXECUCAO`.
   `saga.pagamento.validade-minutos` (30 por padrao, 2 no perfil `demo`).
 - **Pagamento atrasado** (confirmacao em OS ja cancelada) ou **segunda cobranca confirmada**: a OS nao muda e o servico
   manda estornar.
-- **Estorno que falhou** (`pagamento.estorno-falhou`): a OS fica em `AGUARDANDO_ESTORNO`, com log e metrica;
+- **Estorno que falhou** (`pagamento.estorno-falhou`): a OS fica em `AGUARDANDO_ESTORNO`, com log, metrica e registro no historico;
   `POST /{id}/reprocessar-estorno` reenvia o comando.
 
 ## Confiabilidade
