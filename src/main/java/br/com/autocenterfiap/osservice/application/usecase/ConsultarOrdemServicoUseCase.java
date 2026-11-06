@@ -16,7 +16,7 @@ public class ConsultarOrdemServicoUseCase {
     public static final int TAMANHO_PADRAO = 20;
     public static final int TAMANHO_MAXIMO = 100;
 
-    public record Detalhe(OrdemServico os, String linkPagamento) {
+    public record Detalhe(OrdemServico os, String linkPagamento, boolean estornoPendente) {
     }
 
     private final OrdemServicoRepositoryPort ordens;
@@ -41,7 +41,8 @@ public class ConsultarOrdemServicoUseCase {
         var os = buscar(id);
         var emPagamento = os.getStatus() == StatusOS.AGUARDANDO_PAGAMENTO
                 || os.getStatus() == StatusOS.PAGAMENTO_RECUSADO;
-        return new Detalhe(os, emPagamento ? sagas.buscar(id).getLinkPagamento() : null);
+        var saga = sagas.buscar(id);
+        return new Detalhe(os, emPagamento ? saga.getLinkPagamento() : null, saga.getEstornoPendenteId() != null);
     }
 
     @Transactional(readOnly = true)

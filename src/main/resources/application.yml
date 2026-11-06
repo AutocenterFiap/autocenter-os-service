@@ -30,6 +30,10 @@ spring:
     consumer:
       auto-offset-reset: earliest
 
+logging:
+  pattern:
+    level: "%5p [%X{correlationId:-}]"
+
 management:
   endpoints:
     web:

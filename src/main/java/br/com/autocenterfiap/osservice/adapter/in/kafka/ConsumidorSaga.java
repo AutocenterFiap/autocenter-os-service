@@ -4,6 +4,7 @@ import br.com.autocenterfiap.osservice.application.exception.MensagemInvalidaExc
 import br.com.autocenterfiap.osservice.application.mensagem.MensagemEnvelope;
 import br.com.autocenterfiap.osservice.application.mensagem.Topicos;
 import br.com.autocenterfiap.osservice.application.usecase.ConsumirMensagemUseCase;
+import br.com.autocenterfiap.osservice.application.usecase.ProcessarGatilhoSagaUseCase;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Objects;
@@ -13,8 +14,6 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class ConsumidorSaga {
-
-    private static final String CHAVE_MDC = "correlationId";
 
     private final ObjectMapper mapper;
     private final ConsumirMensagemUseCase consumir;
@@ -30,11 +29,11 @@ public class ConsumidorSaga {
         if (envelope == null) {
             throw new MensagemInvalidaException("Mensagem sem envelope");
         }
-        MDC.put(CHAVE_MDC, Objects.toString(envelope.correlationId(), ""));
+        MDC.put(ProcessarGatilhoSagaUseCase.CHAVE_MDC, Objects.toString(envelope.correlationId(), ""));
         try {
             consumir.executar(envelope);
         } finally {
-            MDC.remove(CHAVE_MDC);
+            MDC.remove(ProcessarGatilhoSagaUseCase.CHAVE_MDC);
         }
     }
 }

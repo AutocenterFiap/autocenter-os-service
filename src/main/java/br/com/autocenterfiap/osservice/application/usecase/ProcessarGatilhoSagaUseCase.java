@@ -26,9 +26,12 @@ import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.transaction.annotation.Transactional;
 
 public class ProcessarGatilhoSagaUseCase {
+
+    public static final String CHAVE_MDC = "correlationId";
 
     private static final Logger log = LoggerFactory.getLogger(ProcessarGatilhoSagaUseCase.class);
     private static final int TAMANHO_MOTIVO_HISTORICO = 500;
@@ -60,12 +63,31 @@ public class ProcessarGatilhoSagaUseCase {
     @Transactional
     public Decisao executar(Long osId, Gatilho gatilho, String evento, ItensOS itens, Map<String, Object> dados) {
         var os = ordens.buscarPorId(osId).orElseThrow(() -> new OrdemServicoNaoEncontradaException(osId));
+        var correlationAnterior = MDC.get(CHAVE_MDC);
+        MDC.put(CHAVE_MDC, os.getCorrelationId().toString());
+        try {
+            return decidirEAplicar(os, gatilho, evento, itens, dados);
+        } finally {
+            restaurarMdc(correlationAnterior);
+        }
+    }
+
+    private static void restaurarMdc(String correlationAnterior) {
+        if (correlationAnterior == null) {
+            MDC.remove(CHAVE_MDC);
+        } else {
+            MDC.put(CHAVE_MDC, correlationAnterior);
+        }
+    }
+
+    private Decisao decidirEAplicar(OrdemServico os, Gatilho gatilho, String evento, ItensOS itens,
+            Map<String, Object> dados) {
+        var osId = os.getId();
         var saga = sagas.buscar(osId);
         var decisao = MaquinaEstadosSaga.decidir(new EstadoSaga(os.getStatus(), saga.getTentativasPagamento(),
                 saga.getPagamentoConfirmadoId(), saga.getEstornoPendenteId(), maxTentativas), gatilho);
         if (!decisao.aceita()) {
-            log.info("Evento {} descartado: OS {} em {}", evento, osId, os.getStatus());
-            observabilidade.eventoDescartado(evento);
+            registrarRecusa(osId, os.getStatus(), gatilho, evento);
             return decisao;
         }
 
@@ -79,6 +101,22 @@ public class ProcessarGatilhoSagaUseCase {
         sagas.salvar(saga);
         registrarMetricas(osId, gatilho, decisao, mudancas);
         return decisao;
+    }
+
+    private void registrarRecusa(Long osId, StatusOS status, Gatilho gatilho, String evento) {
+        if (acaoRest(gatilho)) {
+            log.info("Acao {} recusada: OS {} em {}", evento, osId, status);
+            return;
+        }
+        log.info("Evento {} descartado: OS {} em {}", evento, osId, status);
+        observabilidade.eventoDescartado(evento);
+    }
+
+    private static boolean acaoRest(Gatilho gatilho) {
+        return switch (gatilho.tipo()) {
+            case ENTREGA_SOLICITADA, CANCELAMENTO_SOLICITADO, REPROCESSAR_ESTORNO -> true;
+            default -> false;
+        };
     }
 
     private void aplicarEfeitosDoGatilho(OrdemServico os, SagaOS saga, Gatilho gatilho, Decisao decisao,
@@ -127,7 +165,10 @@ public class ProcessarGatilhoSagaUseCase {
     }
 
     private static boolean registraSemMudanca(Gatilho gatilho) {
-        return gatilho.tipo() == TipoGatilho.EXECUCAO_INICIADA || gatilho.tipo() == TipoGatilho.PAGAMENTO_CONFIRMADO;
+        return switch (gatilho.tipo()) {
+            case EXECUCAO_INICIADA, PAGAMENTO_CONFIRMADO, PAGAMENTO_ESTORNADO, PAGAMENTO_ESTORNO_FALHOU -> true;
+            default -> false;
+        };
     }
 
     private Instant entradaNoStatusAtual(OrdemServico os) {
@@ -186,6 +227,7 @@ public class ProcessarGatilhoSagaUseCase {
 
     private void registrarMetricas(Long osId, Gatilho gatilho, Decisao decisao, List<Mudanca> mudancas) {
         mudancas.forEach(m -> {
+            log.info("OS {}: {} -> {} (gatilho {})", osId, m.anterior(), m.novo(), gatilho.tipo());
             observabilidade.tempoNoStatus(m.anterior(), m.tempo());
             observabilidade.mudancaStatus(m.novo());
         });

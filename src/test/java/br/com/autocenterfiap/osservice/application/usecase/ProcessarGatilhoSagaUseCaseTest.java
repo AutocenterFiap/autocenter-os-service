@@ -51,6 +51,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 
 class ProcessarGatilhoSagaUseCaseTest {
 
@@ -68,7 +69,13 @@ class ProcessarGatilhoSagaUseCaseTest {
     private final ObservabilidadePort observabilidade = mock(ObservabilidadePort.class);
     private ProcessarGatilhoSagaUseCase useCase;
     private final Logger logUseCase = (Logger) LoggerFactory.getLogger(ProcessarGatilhoSagaUseCase.class);
-    private final ListAppender<ILoggingEvent> log = new ListAppender<>();
+    private final ListAppender<ILoggingEvent> log = new ListAppender<>() {
+        @Override
+        protected void append(ILoggingEvent evento) {
+            evento.prepareForDeferredProcessing();
+            super.append(evento);
+        }
+    };
     private SagaOS saga;
 
     @BeforeEach
@@ -454,6 +461,31 @@ class ProcessarGatilhoSagaUseCaseTest {
         assertThat(saga.getEstornoPendenteId()).isEqualTo(77L);
         verify(observabilidade).estornoFalhou();
         verify(outbox, never()).guardar(any());
+        assertThat(registros(1).get(0)).isEqualTo(new RegistroHistorico(OS_ID, StatusOS.AGUARDANDO_ESTORNO,
+                StatusOS.AGUARDANDO_ESTORNO, TiposMensagem.PAGAMENTO_ESTORNO_FALHOU, "erro no gateway", AGORA));
+    }
+
+    @Test
+    void estornoConfirmadoSemMudancaDeStatusVaiParaOHistorico() {
+        var os = osEm(StatusOS.CANCELADA);
+        saga.setEstornoPendenteId(77L);
+
+        useCase.executar(OS_ID, Gatilho.pagamento(TipoGatilho.PAGAMENTO_ESTORNADO, 77L, null, null),
+                TiposMensagem.PAGAMENTO_ESTORNADO, null, Map.of("pagamentoId", 77L));
+
+        assertThat(os.getStatus()).isEqualTo(StatusOS.CANCELADA);
+        assertThat(saga.getEstornoPendenteId()).isNull();
+        assertThat(registros(1).get(0)).isEqualTo(new RegistroHistorico(OS_ID, StatusOS.CANCELADA,
+                StatusOS.CANCELADA, TiposMensagem.PAGAMENTO_ESTORNADO, null, AGORA));
+    }
+
+    @Test
+    void estornoDesconhecidoIgnoradoNaoVaiParaOHistorico() {
+        osEm(StatusOS.CANCELADA);
+
+        useCase.executar(OS_ID, Gatilho.pagamento(TipoGatilho.PAGAMENTO_ESTORNADO, 77L, null, null),
+                TiposMensagem.PAGAMENTO_ESTORNADO, null, Map.of("pagamentoId", 77L));
+
         verify(historico, never()).registrar(any());
     }
 
@@ -548,5 +580,78 @@ class ProcessarGatilhoSagaUseCaseTest {
         var ordem = inOrder(ordens, sagas);
         ordem.verify(ordens).salvar(os);
         ordem.verify(sagas).salvar(saga);
+    }
+
+    @Test
+    void acaoRestRecusadaNaoContaComoEventoDescartado() {
+        osEm(StatusOS.ENTREGUE);
+
+        for (var tipo : List.of(TipoGatilho.ENTREGA_SOLICITADA, TipoGatilho.CANCELAMENTO_SOLICITADO,
+                TipoGatilho.REPROCESSAR_ESTORNO)) {
+            assertThat(executar(tipo, "acao.rest").aceita()).as(tipo.name()).isFalse();
+        }
+
+        verify(observabilidade, never()).eventoDescartado(any());
+    }
+
+    @Test
+    void cadaTransicaoLogaEmInfoComOCorrelationIdDaOS() {
+        var os = osEm(StatusOS.AGUARDANDO_PAGAMENTO);
+        saga.setTentativasPagamento(3);
+
+        useCase.executar(OS_ID, Gatilho.pagamento(TipoGatilho.PAGAMENTO_RECUSADO, 77L, 3, "Dados do cartao"),
+                TiposMensagem.PAGAMENTO_RECUSADO, null, Map.of());
+
+        var transicoes = log.list.stream().filter(e -> e.getLevel() == Level.INFO).toList();
+        assertThat(transicoes).extracting(ILoggingEvent::getFormattedMessage).containsExactly(
+                "OS 10: AGUARDANDO_PAGAMENTO -> PAGAMENTO_RECUSADO (gatilho PAGAMENTO_RECUSADO)",
+                "OS 10: PAGAMENTO_RECUSADO -> CANCELADA (gatilho PAGAMENTO_RECUSADO)");
+        assertThat(transicoes).allSatisfy(e -> assertThat(e.getMDCPropertyMap())
+                .containsEntry("correlationId", os.getCorrelationId().toString()));
+    }
+
+    @Test
+    void transicaoQueNaoSalvouNaoApareceNoLog() {
+        var os = osEm(StatusOS.ABERTA);
+        when(ordens.salvar(os)).thenThrow(new IllegalStateException("conflito"));
+
+        assertThatThrownBy(() -> executar(TipoGatilho.DIAGNOSTICO_INICIADO, TiposMensagem.DIAGNOSTICO_INICIADO))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(log.list).isEmpty();
+    }
+
+    @Test
+    void descarteTambemLogaComOCorrelationIdDaOS() {
+        var os = osEm(StatusOS.ABERTA);
+
+        executar(TipoGatilho.EXECUCAO_FINALIZADA, TiposMensagem.EXECUCAO_FINALIZADA);
+
+        assertThat(log.list).singleElement().satisfies(e -> assertThat(e.getMDCPropertyMap())
+                .containsEntry("correlationId", os.getCorrelationId().toString()));
+    }
+
+    @Test
+    void semCorrelationIdAnteriorOMdcFicaLimpoAoFim() {
+        osEm(StatusOS.ABERTA);
+
+        executar(TipoGatilho.DIAGNOSTICO_INICIADO, TiposMensagem.DIAGNOSTICO_INICIADO);
+
+        assertThat(MDC.get("correlationId")).isNull();
+    }
+
+    @Test
+    void correlationIdDoEnvelopeVoltaAoMdcAoFimMesmoComFalha() {
+        var os = osEm(StatusOS.ABERTA);
+        when(ordens.salvar(os)).thenThrow(new IllegalStateException("conflito"));
+        MDC.put("correlationId", "do-envelope");
+        try {
+            assertThatThrownBy(() -> executar(TipoGatilho.DIAGNOSTICO_INICIADO, TiposMensagem.DIAGNOSTICO_INICIADO))
+                    .isInstanceOf(IllegalStateException.class);
+
+            assertThat(MDC.get("correlationId")).isEqualTo("do-envelope");
+        } finally {
+            MDC.remove("correlationId");
+        }
     }
 }

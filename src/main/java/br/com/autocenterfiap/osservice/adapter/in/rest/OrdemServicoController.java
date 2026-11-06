@@ -47,26 +47,26 @@ public class OrdemServicoController {
     @ResponseStatus(HttpStatus.CREATED)
     public OSResponse abrir(@Valid @RequestBody AbrirOSRequest req) {
         var os = abrir.executar(req.clienteId(), req.veiculoId(), req.problemaRelatado());
-        return OSResponse.de(os, null);
+        return OSResponse.de(os);
     }
 
     @GetMapping
     public PaginaResponse<OSResponse> listar(@RequestParam(required = false) StatusOS status,
             @RequestParam(defaultValue = "0") int pagina,
             @RequestParam(defaultValue = "" + ConsultarOrdemServicoUseCase.TAMANHO_PADRAO) int tamanho) {
-        return PaginaResponse.de(consultar.listar(status, pagina, tamanho), os -> OSResponse.de(os, null));
+        return PaginaResponse.de(consultar.listar(status, pagina, tamanho), OSResponse::de);
     }
 
     @GetMapping("/{id}")
     public OSResponse detalhar(@PathVariable Long id) {
         var d = consultar.detalhar(id);
-        return OSResponse.de(d.os(), d.linkPagamento());
+        return OSResponse.detalhe(d.os(), d.linkPagamento(), d.estornoPendente());
     }
 
     @GetMapping("/numero/{numero}")
     public OSResponse porNumero(@PathVariable Long numero) {
         var d = consultar.detalharPorNumero(numero);
-        return OSResponse.de(d.os(), d.linkPagamento());
+        return OSResponse.detalhe(d.os(), d.linkPagamento(), d.estornoPendente());
     }
 
     @GetMapping("/status/{id}")

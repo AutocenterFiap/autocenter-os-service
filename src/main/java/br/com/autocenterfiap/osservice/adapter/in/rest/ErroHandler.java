@@ -5,7 +5,7 @@ import br.com.autocenterfiap.osservice.application.exception.OSJaEmAndamentoExce
 import br.com.autocenterfiap.osservice.application.exception.OrdemServicoNaoEncontradaException;
 import java.util.Map;
 import java.util.stream.Collectors;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -51,8 +51,8 @@ public class ErroHandler {
         return resposta(HttpStatus.CONFLICT, "acao_recusada", e.getMessage());
     }
 
-    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
-    public ResponseEntity<Map<String, String>> conflitoOtimista(ObjectOptimisticLockingFailureException e) {
+    @ExceptionHandler(ConcurrencyFailureException.class)
+    public ResponseEntity<Map<String, String>> conflitoConcorrencia(ConcurrencyFailureException e) {
         return resposta(HttpStatus.CONFLICT, "conflito_concorrencia",
                 "A ordem de servico foi alterada por outra operacao; tente novamente");
     }

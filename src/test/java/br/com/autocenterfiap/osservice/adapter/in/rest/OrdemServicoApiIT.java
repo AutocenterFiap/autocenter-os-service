@@ -11,10 +11,17 @@ import br.com.autocenterfiap.osservice.domain.entity.OrdemServico;
 import br.com.autocenterfiap.osservice.domain.enums.StatusOS;
 import br.com.autocenterfiap.osservice.domain.saga.RegistroHistorico;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +29,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest(
@@ -32,6 +40,8 @@ class OrdemServicoApiIT {
 
     private static final String URL = "/v1/ordem-servicos";
     private static final AtomicLong VEICULO = new AtomicLong(50_000);
+    private static final int CONCORRENTES = 4;
+    private static final int RODADAS_DA_CORRIDA = 25;
 
     @Autowired
     private TestRestTemplate rest;
@@ -116,6 +126,37 @@ class OrdemServicoApiIT {
     }
 
     @Test
+    void detalheExpoeCorrelationIdEEstornoPendente() {
+        var os = criar(StatusOS.CANCELADA);
+
+        var semPendente = mapa(rest.getForEntity(URL + "/" + os.getId(), Map.class).getBody());
+        assertThat(semPendente).containsEntry("correlationId", os.getCorrelationId().toString())
+                .containsEntry("estornoPendente", false);
+
+        var saga = sagas.buscar(os.getId());
+        saga.setEstornoPendenteId(77L);
+        sagas.salvar(saga);
+
+        assertThat(mapa(rest.getForEntity(URL + "/" + os.getId(), Map.class).getBody()))
+                .containsEntry("estornoPendente", true);
+        assertThat(mapa(rest.getForEntity(URL + "/numero/" + os.getNumero(), Map.class).getBody()))
+                .containsEntry("estornoPendente", true);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void listaTrazCorrelationIdMasNaoInventaEstornoPendente() {
+        var os = criar(StatusOS.ABERTA);
+
+        var conteudo = (List<Map<String, Object>>) mapa(rest.getForEntity(URL + "?tamanho=100", Map.class).getBody())
+                .get("conteudo");
+
+        assertThat(conteudo).filteredOn(o -> os.getId().intValue() == (Integer) o.get("id")).singleElement()
+                .satisfies(o -> assertThat(o).containsEntry("correlationId", os.getCorrelationId().toString())
+                        .doesNotContainKey("estornoPendente"));
+    }
+
+    @Test
     void osInexistenteRetorna404() {
         for (var caminho : List.of("/999999", "/numero/999999", "/status/999999", "/999999/historico")) {
             var r = rest.getForEntity(URL + caminho, Map.class);
@@ -190,5 +231,45 @@ class OrdemServicoApiIT {
         assertThat(jdbc.queryForObject("select count(*) from outbox where chave = ? and conteudo like '%billing.estornar-pagamento%'",
                 Long.class, String.valueOf(comPendente.getId()))).isEqualTo(1L);
         assertThat(conflito.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    void corridaDeCancelamentosDaUmVencedorENenhum500() throws Exception {
+        var conflitos = 0;
+        try (var pool = Executors.newFixedThreadPool(CONCORRENTES)) {
+            for (int rodada = 0; rodada < RODADAS_DA_CORRIDA; rodada++) {
+                var os = criar(StatusOS.ABERTA);
+                var respostas = cancelarAoMesmoTempo(pool, os.getId());
+
+                assertThat(respostas).extracting(ResponseEntity::getStatusCode).as("rodada %d: %s", rodada, respostas)
+                        .containsOnly(HttpStatus.OK, HttpStatus.CONFLICT)
+                        .filteredOn(HttpStatus.OK::equals).hasSize(1);
+                var perdedores = respostas.stream().filter(r -> r.getStatusCode() == HttpStatus.CONFLICT)
+                        .map(r -> mapa(r.getBody()).get("erro")).toList();
+                assertThat(perdedores).isSubsetOf("conflito_concorrencia", "acao_recusada");
+                conflitos += (int) perdedores.stream().filter("conflito_concorrencia"::equals).count();
+                assertThat(jdbc.queryForObject(
+                        "select count(*) from outbox where chave = ? and conteudo like '%os.cancelada%'",
+                        Long.class, String.valueOf(os.getId()))).isEqualTo(1L);
+            }
+        }
+        assertThat(conflitos).as("respostas conflito_concorrencia em toda a corrida").isPositive();
+    }
+
+    @SuppressWarnings("rawtypes")
+    private List<ResponseEntity<Map>> cancelarAoMesmoTempo(ExecutorService pool, Long osId)
+            throws InterruptedException, ExecutionException {
+        var largada = new CyclicBarrier(CONCORRENTES);
+        List<Future<ResponseEntity<Map>>> chamadas = IntStream.range(0, CONCORRENTES)
+                .mapToObj(i -> pool.submit(() -> {
+                    largada.await();
+                    return rest.postForEntity(URL + "/" + osId + "/cancelar", null, Map.class);
+                }))
+                .toList();
+        var respostas = new ArrayList<ResponseEntity<Map>>();
+        for (var chamada : chamadas) {
+            respostas.add(chamada.get());
+        }
+        return respostas;
     }
 }
