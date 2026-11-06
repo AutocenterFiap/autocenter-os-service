@@ -9,7 +9,8 @@ FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 
-ADD https://dtdg.co/latest-java-tracer /app/dd-java-agent.jar
+ARG DD_TRACER_VERSION=1.68.1
+ADD https://repo1.maven.org/maven2/com/datadoghq/dd-java-agent/${DD_TRACER_VERSION}/dd-java-agent-${DD_TRACER_VERSION}.jar /app/dd-java-agent.jar
 
 RUN addgroup -S app && adduser -S app -G app && chown -R app:app /app
 USER app

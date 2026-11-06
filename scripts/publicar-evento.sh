@@ -13,7 +13,7 @@ TIPO="$1"
 OS_ID="$2"
 
 command -v jq >/dev/null || { echo "ERRO: jq nao encontrado" >&2; exit 1; }
-[[ "$OS_ID" =~ ^[0-9]+$ ]] || { echo "ERRO: osId deve ser inteiro positivo: $OS_ID" >&2; exit 2; }
+[[ "$OS_ID" =~ ^[1-9][0-9]*$ ]] || { echo "ERRO: osId deve ser inteiro positivo, sem zeros a esquerda: $OS_ID" >&2; exit 2; }
 
 ARQUIVO="$EXEMPLOS/$TIPO.json"
 if [[ ! "$TIPO" =~ ^[a-z]+\.[a-z-]+$ ]] || [ ! -f "$ARQUIVO" ]; then
