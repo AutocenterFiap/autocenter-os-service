@@ -1,0 +1,9 @@
+target/
+.git/
+.idea/
+.vscode/
+docs/
+k8s/
+scripts/
+*.iml
+*.log

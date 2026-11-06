@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: os-service
+  namespace: autocenter
+  labels:
+    app: os-service
+    component: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: os-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: os-service
+        component: api
+      annotations:
+        ad.datadoghq.com/os-service.checks: |
+          {
+            "openmetrics": {
+              "instances": [
+                {
+                  "prometheus_url": "http://%%host%%:8098/actuator/prometheus",
+                  "namespace": "autocenter",
+                  "metrics": [
+                    "autocenter_*"
+                  ]
+                }
+              ]
+            }
+          }
+        ad.datadoghq.com/os-service.logs: |
+          [
+            {"source": "spring-boot", "service": "os-service"}
+          ]
+    spec:
+      enableServiceLinks: false
+      initContainers:
+        - name: wait-for-mysql
+          image: busybox:1.36
+          command:
+            - sh
+            - "-c"
+            - |
+              until nc -z os-mysql 3306; do
+                echo "Aguardando MySQL...";
+                sleep 3;
+              done;
+              echo "MySQL disponivel!"
+      containers:
+        - name: os-service
+          image: os-service:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8098
+              name: http
+          envFrom:
+            - configMapRef:
+                name: os-service-config
+          env:
+            - name: DD_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef: {name: os-service-secrets, key: DB_USERNAME}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: os-service-secrets, key: DB_PASSWORD}
+            - name: SISTEMA_SEGURANCA_CHAVE_SECRETA
+              valueFrom:
+                secretKeyRef: {name: os-service-secrets, key: SISTEMA_SEGURANCA_CHAVE_SECRETA}
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "768Mi"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8098
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8098
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8098
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 18
+      terminationGracePeriodSeconds: 30

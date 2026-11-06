@@ -1,0 +1,14 @@
+{
+  "eventId": "00000000-0000-0000-0000-000000000000",
+  "tipo": "diagnostico.concluido",
+  "versao": 1,
+  "osId": 0,
+  "correlationId": "00000000-0000-0000-0000-000000000000",
+  "ocorridoEm": "2026-01-01T00:00:00Z",
+  "payload": {
+    "itens": {
+      "servicos": [{ "servicoId": 1, "descricao": "Troca de óleo", "valor": "120.00" }],
+      "produtos": [{ "produtoId": 7, "descricao": "Filtro de óleo", "quantidade": 1, "precoUnitario": "45.00" }]
+    }
+  }
+}
