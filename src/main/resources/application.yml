@@ -56,3 +56,6 @@ sistema:
   seguranca:
     chave:
       secreta: ${SISTEMA_SEGURANCA_CHAVE_SECRETA}
+
+springdoc:
+  override-with-generic-response: false
