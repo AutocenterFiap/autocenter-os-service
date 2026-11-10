@@ -89,7 +89,8 @@ Cucumber da Saga), todos passando. Excluidos da medicao: `OsServiceApplication`,
 ## Contrato de mensagens
 
 Um
-exemplo JSON por tipo publicado por Billing e Execucao esta em [`docs/contratos/exemplos/`](docs/contratos/exemplos), e
+exemplo JSON por tipo de mensagem (OS Service, Billing e Execucao), numerado na ordem do fluxo, esta em
+[`docs/contratos/exemplos/`](docs/contratos/exemplos/README.md), e
 o simulador (`scripts/publicar-evento.sh`) esta descrito em [`docs/contratos/README.md`](docs/contratos/README.md).
 
 Atencao a `diagnostico.concluido`: "sem itens" significa **listas vazias**, o que cancela a OS

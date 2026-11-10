@@ -1,8 +1,11 @@
 # Contrato de mensagens e simulador de eventos
 
-Em `exemplos/` ha um JSON por
-tipo publicado por Billing e Execucao (14 tipos). Os valores de `eventId`, `osId`,
-`correlationId` e `ocorridoEm` dos exemplos sao placeholders: o script os substitui.
+Em `exemplos/` ha um JSON por tipo de
+mensagem (22 tipos: 8 do OS Service, 9 do Billing, 5 da Execucao), numerados na ordem do fluxo da Saga
+como `<ordem>-<emissor>-<tipo>.json`. O indice, com topico e consumidor de cada um, esta em
+[`exemplos/README.md`](exemplos/README.md). Os valores de `eventId`, `osId`, `correlationId` e
+`ocorridoEm` dos exemplos sao placeholders: o script os substitui. O script so publica os exemplos de
+emissor `billing` e `execucao`.
 
 ## Deploy no cluster kind `autocenter`
 
