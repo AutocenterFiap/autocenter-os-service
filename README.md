@@ -62,14 +62,18 @@ O banco (`k8s/banco`) e a aplicacao (`k8s/app`) tem ciclos de vida separados: o 
 
 ## Swagger
 
-O Ingress expoe apenas `/v1/ordem-servicos`, entao o Swagger **nao** sai pelo Ingress (`http://localhost/swagger-ui/...`
-da 404). No cluster, use port-forward; o Swagger e a documentacao OpenAPI sao publicos, sem token:
-```bash
-kubectl --context kind-autocenter -n autocenter port-forward svc/os-service 8098:8098
-# http://localhost:8098/swagger-ui/index.html      (OpenAPI em /v3/api-docs)
+No cluster, o Ingress expoe a API (`/v1/ordem-servicos`), o Swagger (`/swagger-ui`) e o OpenAPI (`/v3/api-docs`), tanto
+em `localhost` quanto pelo IP da maquina na rede (o Ingress escuta em `0.0.0.0:80`). O actuator fica fora do Ingress.
+Swagger e OpenAPI sao publicos, sem token:
 ```
-Para chamar as rotas pelo "Authorize" do Swagger, gere um token com `scripts/gerar-token.sh`. Rodando local
-(`mvn spring-boot:run`) o endereco e o mesmo.
+http://localhost/swagger-ui/index.html        (OpenAPI em http://localhost/v3/api-docs)
+```
+Para chamar as rotas pelo "Authorize" do Swagger, gere um token com `scripts/gerar-token.sh`. O "Try it out" usa o
+mesmo endereco pelo qual o Swagger foi aberto. Rodando local (`mvn spring-boot:run`), o Swagger fica em
+`http://localhost:8098/swagger-ui/index.html`.
+
+Cada endpoint, parametro, resposta e campo tem descricao; `OpenApiDocumentacaoIT` falha se algo novo ficar sem
+documentacao.
 
 ## Evidencias de cobertura
 

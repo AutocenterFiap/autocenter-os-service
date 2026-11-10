@@ -15,3 +15,17 @@ spec:
                 name: os-service
                 port:
                   number: 8098
+          - path: /swagger-ui
+            pathType: Prefix
+            backend:
+              service:
+                name: os-service
+                port:
+                  number: 8098
+          - path: /v3/api-docs
+            pathType: Prefix
+            backend:
+              service:
+                name: os-service
+                port:
+                  number: 8098
