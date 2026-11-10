@@ -60,6 +60,19 @@ kubectl --context kind-autocenter -n autocenter rollout status deploy/os-service
 O banco (`k8s/banco`) e a aplicacao (`k8s/app`) tem ciclos de vida separados: o deploy do pipeline aplica so
 `k8s/app`, entao nunca reinicia, recria nem apaga o MySQL.
 
+## Acessar o MySQL do cluster (DBeaver etc.)
+
+```bash
+./scripts/expor-mysql.sh     # uma vez; o proxy volta sozinho apos reboot. Remover: --remover
+```
+Cria o Service NodePort `os-mysql-externo` (30306) e um container `autocenter-mysql-proxy` (socat) na rede docker do
+kind, publicado so em `127.0.0.1:3307`. Conexao: host `localhost`, porta `3307`, database `os_service`, usuario
+`osservice`, senha do Secret (o script imprime o comando para ler). No DBeaver, em *Driver properties*:
+`allowPublicKeyRetrieval=true` e `useSSL=false`.
+
+O proxy existe porque o kind so publica portas definidas na criacao do cluster. Ao recriar o cluster, prefira mapear
+`containerPort: 30306` -> `hostPort: 3307` em `autocenter-k8s-infra/kind/cluster.yaml` e remover o proxy.
+
 ## Swagger
 
 No cluster, o Ingress expoe a API (`/v1/ordem-servicos`), o Swagger (`/swagger-ui`) e o OpenAPI (`/v3/api-docs`), tanto

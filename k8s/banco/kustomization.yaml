@@ -3,3 +3,4 @@ kind: Kustomization
 namespace: autocenter
 resources:
   - mysql.yaml
+  - mysql-externo.yaml
