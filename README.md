@@ -78,12 +78,12 @@ Resultado de `mvn -B verify` (BUILD SUCCESS, gate de 80% de linhas do JaCoCo ate
 
 | Metrica | Cobertas / total | % |
 |---|---|---|
-| Linhas | 816 / 829 | 98,4 |
-| Instrucoes | 4297 / 4354 | 98,7 |
-| Branches | 268 / 285 | 94,0 |
-| Metodos | 240 / 243 | 98,8 |
+| Linhas | 836 / 849 | 98,5 |
+| Instrucoes | 4382 / 4439 | 98,7 |
+| Branches | 278 / 295 | 94,2 |
+| Metodos | 245 / 248 | 98,8 |
 
-Testes: 207 unitarios (Surefire) e 55 de integracao e BDD (Failsafe: Testcontainers com MySQL e Kafka, mais os cenarios
+Testes: 209 unitarios (Surefire) e 58 de integracao e BDD (Failsafe: Testcontainers com MySQL e Kafka, mais os cenarios
 Cucumber da Saga), todos passando. Excluidos da medicao: `OsServiceApplication`, DTOs e entidades JPA.
 
 ## Contrato de mensagens
