@@ -25,7 +25,14 @@ if ss -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]${PORTA}$"; then
   exit 1
 fi
 
-docker run -d --name "$PROXY" --restart unless-stopped --network "$REDE" \
+SUBREDE="$(docker network inspect -f '{{range .IPAM.Config}}{{println .Subnet}}{{end}}' "$REDE" | grep -m1 '\.')"
+case "${SUBREDE#*/}" in
+  16) IP_PROXY="$(echo "$SUBREDE" | cut -d. -f1-2).255.250" ;;
+  24) IP_PROXY="$(echo "$SUBREDE" | cut -d. -f1-3).250" ;;
+  *) echo "ERRO: sub-rede IPv4 da rede $REDE nao suportada: ${SUBREDE:-nenhuma}" >&2; exit 1 ;;
+esac
+
+docker run -d --name "$PROXY" --restart unless-stopped --network "$REDE" --ip "$IP_PROXY" \
   -p "127.0.0.1:${PORTA}:3306" "$IMAGEM" \
   tcp-listen:3306,fork,reuseaddr "tcp-connect:${NO}:30306" >/dev/null
 
