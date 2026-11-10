@@ -49,13 +49,16 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 **No cluster kind** (infra em `autocenter-k8s-infra`: `./scripts/criar-cluster.sh`). Todo comando usa
 `--context kind-autocenter`, porque o contexto padrao desta maquina e um EKS real. Passo a passo completo (Secret,
-imagem, apply, simulador de eventos) em [`docs/contratos/README.md`](docs/contratos/README.md):
+banco, imagem, apply, simulador de eventos) em [`docs/contratos/README.md`](docs/contratos/README.md):
 ```bash
+./scripts/criar-banco.sh     # uma vez: MySQL proprio em k8s/banco, volume com Retain
 docker build -f docker/Dockerfile -t os-service:local .
 kind load docker-image os-service:local --name autocenter
-kubectl --context kind-autocenter apply -k k8s
+kubectl --context kind-autocenter apply -k k8s/app
 kubectl --context kind-autocenter -n autocenter rollout status deploy/os-service --timeout=180s
 ```
+O banco (`k8s/banco`) e a aplicacao (`k8s/app`) tem ciclos de vida separados: o deploy do pipeline aplica so
+`k8s/app`, entao nunca reinicia, recria nem apaga o MySQL.
 
 ## Swagger
 
