@@ -101,8 +101,8 @@ Um `{ "itens": {} }` (campos ausentes) e mensagem invalida: nao e retentada e va
 - Entrega real de traces e metricas ao Datadog: o tracer esta na imagem, mas `DD_TRACE_ENABLED=false` e nao ha agente
   no cluster.
 - O pipeline no GitHub: `.github/workflows/ci-cd.yml` nunca rodou (passou por `actionlint`, mas nao foi executado).
-  Passos manuais em [`docs/setup-github.md`](docs/setup-github.md). O projeto SonarCloud tambem nao foi criado:
-  `autocenterfiap` (organizacao) e `AutocenterFiap_autocenter-os-service` (projectKey) sao palpites, a confirmar em
-  sonarcloud.io e a corrigir em 3 lugares: `pom.xml`, `.github/workflows/ci-cd.yml` e `sonar-project.properties`.
+  Passos manuais em [`docs/setup-github.md`](docs/setup-github.md). O projeto no SonarCloud
+  (`AutocenterFiap_autocenter-os-service`) ja foi criado, mas ainda nao recebeu nenhuma analise; a configuracao fica
+  so no `pom.xml`.
 - Integracao com o Billing e a Execucao reais: so foi testada com dubles nos testes e com o simulador de eventos.
 - O Cadastro esta em stub (`cadastro.modo=stub`): qualquer cliente e veiculo sao aceitos.

@@ -21,6 +21,7 @@
 		<sonar.projectKey>AutocenterFiap_autocenter-os-service</sonar.projectKey>
 		<sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
 		<sonar.coverage.exclusions>**/OsServiceApplication.java,**/dto/**,**/entity/*JpaEntity*</sonar.coverage.exclusions>
+		<sonar.qualitygate.wait>true</sonar.qualitygate.wait>
 	</properties>
 	<dependencies>
 		<dependency>
