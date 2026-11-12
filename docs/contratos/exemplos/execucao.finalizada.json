@@ -1,0 +1,9 @@
+{
+  "eventId": "00000000-0000-0000-0000-000000000000",
+  "tipo": "execucao.finalizada",
+  "versao": 1,
+  "osId": 0,
+  "correlationId": "00000000-0000-0000-0000-000000000000",
+  "ocorridoEm": "2026-01-01T00:00:00Z",
+  "payload": {}
+}
