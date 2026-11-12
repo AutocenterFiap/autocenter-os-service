@@ -6,7 +6,11 @@ NAMESPACE="${NAMESPACE:-autocenter}"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXEMPLOS="$DIR/../docs/contratos/exemplos"
 
-uso() { echo "Uso: $0 <tipo> <osId>" >&2; echo "Tipos: $(cd "$EXEMPLOS" && ls *.json | sed 's/\.json$//' | tr '\n' ' ')" >&2; }
+uso() {
+  echo "Uso: $0 <tipo> <osId>" >&2
+  echo "Tipos: $(cd "$EXEMPLOS" && ls [0-9][0-9]-billing-*.json [0-9][0-9]-execucao-*.json \
+    | sed -E 's/^[0-9]{2}-(billing|execucao)-//; s/\.json$//' | tr '\n' ' ')" >&2
+}
 
 [ $# -eq 2 ] || { uso; exit 2; }
 TIPO="$1"
@@ -15,8 +19,11 @@ OS_ID="$2"
 command -v jq >/dev/null || { echo "ERRO: jq nao encontrado" >&2; exit 1; }
 [[ "$OS_ID" =~ ^[1-9][0-9]*$ ]] || { echo "ERRO: osId deve ser inteiro positivo, sem zeros a esquerda: $OS_ID" >&2; exit 2; }
 
-ARQUIVO="$EXEMPLOS/$TIPO.json"
-if [[ ! "$TIPO" =~ ^[a-z]+\.[a-z-]+$ ]] || [ ! -f "$ARQUIVO" ]; then
+ARQUIVO=""
+if [[ "$TIPO" =~ ^[a-z]+\.[a-z-]+$ ]]; then
+  ARQUIVO="$(compgen -G "$EXEMPLOS/[0-9][0-9]-billing-$TIPO.json" || compgen -G "$EXEMPLOS/[0-9][0-9]-execucao-$TIPO.json" || true)"
+fi
+if [ -z "$ARQUIVO" ] || [ ! -f "$ARQUIVO" ]; then
   echo "ERRO: tipo desconhecido: $TIPO" >&2; uso; exit 2
 fi
 

@@ -78,6 +78,13 @@ jobs:
             exit 1
           fi
 
+      - name: Garantir que o banco ja existe
+        run: |
+          if ! kubectl --context "$KIND_CONTEXT" -n "$K8S_NAMESPACE" get deploy/os-mysql pvc/os-mysql-pvc >/dev/null 2>&1; then
+            echo "::error::Banco os-mysql nao existe no cluster. Rode scripts/criar-banco.sh antes do deploy."
+            exit 1
+          fi
+
       - name: Build da imagem (tag = SHA do commit)
         run: docker build -f docker/Dockerfile -t "$IMAGE_NAME:${{ github.sha }}" .
 
@@ -86,11 +93,11 @@ jobs:
 
       - name: Aplicar manifestos com a imagem do commit
         run: |
-          rm -rf "$RUNNER_TEMP/k8s"
-          cp -r k8s "$RUNNER_TEMP/k8s"
+          rm -rf "$RUNNER_TEMP/k8s-app"
+          cp -r k8s/app "$RUNNER_TEMP/k8s-app"
           printf '\nimages:\n  - name: %s\n    newTag: "%s"\n' \
-            "$IMAGE_NAME" "${{ github.sha }}" >> "$RUNNER_TEMP/k8s/kustomization.yaml"
-          kubectl --context "$KIND_CONTEXT" apply -k "$RUNNER_TEMP/k8s"
+            "$IMAGE_NAME" "${{ github.sha }}" >> "$RUNNER_TEMP/k8s-app/kustomization.yaml"
+          kubectl --context "$KIND_CONTEXT" apply -k "$RUNNER_TEMP/k8s-app"
 
       - name: Aguardar o rollout
         run: kubectl --context "$KIND_CONTEXT" -n "$K8S_NAMESPACE" rollout status deploy/os-service --timeout=180s

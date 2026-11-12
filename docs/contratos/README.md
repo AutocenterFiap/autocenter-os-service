@@ -1,8 +1,11 @@
 # Contrato de mensagens e simulador de eventos
 
-Em `exemplos/` ha um JSON por
-tipo publicado por Billing e Execucao (14 tipos). Os valores de `eventId`, `osId`,
-`correlationId` e `ocorridoEm` dos exemplos sao placeholders: o script os substitui.
+Em `exemplos/` ha um JSON por tipo de
+mensagem (22 tipos: 8 do OS Service, 9 do Billing, 5 da Execucao), numerados na ordem do fluxo da Saga
+como `<ordem>-<emissor>-<tipo>.json`. O indice, com topico e consumidor de cada um, esta em
+[`exemplos/README.md`](exemplos/README.md). Os valores de `eventId`, `osId`, `correlationId` e
+`ocorridoEm` dos exemplos sao placeholders: o script os substitui. O script so publica os exemplos de
+emissor `billing` e `execucao`.
 
 ## Deploy no cluster kind `autocenter`
 
@@ -10,7 +13,7 @@ Todos os comandos usam `--context kind-autocenter`: a maquina tem outro contexto
 (EKS real) e ele nunca deve ser usado aqui.
 
 ### 1. Secret (nunca versionado, valores aleatorios locais)
-`k8s/secret.exemplo.yaml` so mostra as chaves e nao entra no `kustomization`. Crie o Secret real:
+`k8s/secret.exemplo.yaml` so mostra as chaves e nao entra em nenhum `kustomization`. Crie o Secret real:
 ```bash
 kubectl --context kind-autocenter -n autocenter create secret generic os-service-secrets \
   --from-literal=MYSQL_ROOT_PASSWORD="$(openssl rand -hex 16)" \
@@ -24,11 +27,25 @@ As credenciais do MySQL (`os-mysql`) e o segredo do JWT vem todos desse Secret.
 aleatorio, que so aceita tokens de `scripts/gerar-token.sh`: tokens reais do login do monolito dao 401 ate os dois
 segredos coincidirem. Na integracao, use em `SISTEMA_SEGURANCA_CHAVE_SECRETA` o valor configurado no monolito.
 
-### 2. Imagem e aplicacao
+### 2. Banco (uma vez)
+```bash
+./scripts/criar-banco.sh
+```
+Aplica `k8s/banco` (MySQL `os-mysql` com PVC de 2Gi), espera o rollout e marca o PV como `Retain`. E idempotente:
+rodar de novo com o manifesto inalterado nao reinicia o banco. O banco tem ciclo de vida proprio:
+
+- o deploy (pipeline ou `apply -k k8s/app`) nunca o aplica, entao nao o reinicia, recria nem apaga;
+- `kubectl delete -k k8s/app` remove so a aplicacao;
+- com `Retain`, ate apagar o PVC por engano preserva os dados no disco do no (o PV fica `Released`). Para religar:
+  `kubectl --context kind-autocenter patch pv <pv> --type=json -p '[{"op":"remove","path":"/spec/claimRef"}]'`, e
+  recrie o PVC com `spec.volumeName: <pv>` antes de rodar o script;
+- o que apaga os dados e `kind delete cluster`, porque o volume vive dentro do container do no.
+
+### 3. Imagem e aplicacao
 ```bash
 docker build -f docker/Dockerfile -t os-service:local .
 kind load docker-image os-service:local --name autocenter
-kubectl --context kind-autocenter apply -k k8s
+kubectl --context kind-autocenter apply -k k8s/app
 kubectl --context kind-autocenter -n autocenter rollout status deploy/os-service --timeout=180s
 ```
 **Nova imagem com a mesma tag:** `apply` nao muda o Deployment, entao depois de um novo
@@ -37,7 +54,7 @@ kubectl --context kind-autocenter -n autocenter rollout status deploy/os-service
 ### Decisoes
 - **Datadog:** o agente do cluster ainda nao existe. O tracer fica na imagem e e carregado
   (`-javaagent` em `JAVA_OPTS`), mas `DD_TRACE_ENABLED=false` e
-  `DD_INSTRUMENTATION_TELEMETRY_ENABLED=false` (em `k8s/configmap.yaml`) o mantem inerte, sem erros nem
+  `DD_INSTRUMENTATION_TELEMETRY_ENABLED=false` (em `k8s/app/configmap.yaml`) o mantem inerte, sem erros nem
   logs de conexao. Quando o agente estiver no ar, troque `DD_TRACE_ENABLED` para `"true"` e
   faca `rollout restart`.
 - **Memoria:** request 512Mi, limite 768Mi, heap em 60% (`MaxRAMPercentage`). Medido: ~360Mi em uso.

@@ -49,24 +49,44 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 **No cluster kind** (infra em `autocenter-k8s-infra`: `./scripts/criar-cluster.sh`). Todo comando usa
 `--context kind-autocenter`, porque o contexto padrao desta maquina e um EKS real. Passo a passo completo (Secret,
-imagem, apply, simulador de eventos) em [`docs/contratos/README.md`](docs/contratos/README.md):
+banco, imagem, apply, simulador de eventos) em [`docs/contratos/README.md`](docs/contratos/README.md):
 ```bash
+./scripts/criar-banco.sh     # uma vez: MySQL proprio em k8s/banco, volume com Retain
 docker build -f docker/Dockerfile -t os-service:local .
 kind load docker-image os-service:local --name autocenter
-kubectl --context kind-autocenter apply -k k8s
+kubectl --context kind-autocenter apply -k k8s/app
 kubectl --context kind-autocenter -n autocenter rollout status deploy/os-service --timeout=180s
 ```
+O banco (`k8s/banco`) e a aplicacao (`k8s/app`) tem ciclos de vida separados: o deploy do pipeline aplica so
+`k8s/app`, entao nunca reinicia, recria nem apaga o MySQL.
+
+## Acessar o MySQL do cluster (DBeaver etc.)
+
+```bash
+./scripts/expor-mysql.sh     # uma vez; o proxy volta sozinho apos reboot. Remover: --remover
+```
+Cria o Service NodePort `os-mysql-externo` (30306) e um container `autocenter-mysql-proxy` (socat) na rede docker do
+kind, publicado so em `127.0.0.1:3307`. Conexao: host `localhost`, porta `3307`, database `os_service`, usuario
+`osservice`, senha do Secret (o script imprime o comando para ler). No DBeaver, em *Driver properties*:
+`allowPublicKeyRetrieval=true` e `useSSL=false`.
+
+O proxy existe porque o kind so publica portas definidas na criacao do cluster. Ao recriar o cluster, prefira mapear
+`containerPort: 30306` -> `hostPort: 3307` em `autocenter-k8s-infra/kind/cluster.yaml` e remover o proxy.
 
 ## Swagger
 
-O Ingress expoe apenas `/v1/ordem-servicos`, entao o Swagger **nao** sai pelo Ingress (`http://localhost/swagger-ui/...`
-da 404). No cluster, use port-forward; o Swagger e a documentacao OpenAPI sao publicos, sem token:
-```bash
-kubectl --context kind-autocenter -n autocenter port-forward svc/os-service 8098:8098
-# http://localhost:8098/swagger-ui/index.html      (OpenAPI em /v3/api-docs)
+No cluster, o Ingress expoe a API (`/v1/ordem-servicos`), o Swagger (`/swagger-ui`) e o OpenAPI (`/v3/api-docs`), tanto
+em `localhost` quanto pelo IP da maquina na rede (o Ingress escuta em `0.0.0.0:80`). O actuator fica fora do Ingress.
+Swagger e OpenAPI sao publicos, sem token:
 ```
-Para chamar as rotas pelo "Authorize" do Swagger, gere um token com `scripts/gerar-token.sh`. Rodando local
-(`mvn spring-boot:run`) o endereco e o mesmo.
+http://localhost/swagger-ui/index.html        (OpenAPI em http://localhost/v3/api-docs)
+```
+Para chamar as rotas pelo "Authorize" do Swagger, gere um token com `scripts/gerar-token.sh`. O "Try it out" usa o
+mesmo endereco pelo qual o Swagger foi aberto. Rodando local (`mvn spring-boot:run`), o Swagger fica em
+`http://localhost:8098/swagger-ui/index.html`.
+
+Cada endpoint, parametro, resposta e campo tem descricao; `OpenApiDocumentacaoIT` falha se algo novo ficar sem
+documentacao.
 
 ## Evidencias de cobertura
 
@@ -75,18 +95,19 @@ Resultado de `mvn -B verify` (BUILD SUCCESS, gate de 80% de linhas do JaCoCo ate
 
 | Metrica | Cobertas / total | % |
 |---|---|---|
-| Linhas | 816 / 829 | 98,4 |
-| Instrucoes | 4297 / 4354 | 98,7 |
-| Branches | 268 / 285 | 94,0 |
-| Metodos | 240 / 243 | 98,8 |
+| Linhas | 836 / 849 | 98,5 |
+| Instrucoes | 4382 / 4439 | 98,7 |
+| Branches | 278 / 295 | 94,2 |
+| Metodos | 245 / 248 | 98,8 |
 
-Testes: 207 unitarios (Surefire) e 55 de integracao e BDD (Failsafe: Testcontainers com MySQL e Kafka, mais os cenarios
+Testes: 209 unitarios (Surefire) e 58 de integracao e BDD (Failsafe: Testcontainers com MySQL e Kafka, mais os cenarios
 Cucumber da Saga), todos passando. Excluidos da medicao: `OsServiceApplication`, DTOs e entidades JPA.
 
 ## Contrato de mensagens
 
 Um
-exemplo JSON por tipo publicado por Billing e Execucao esta em [`docs/contratos/exemplos/`](docs/contratos/exemplos), e
+exemplo JSON por tipo de mensagem (OS Service, Billing e Execucao), numerado na ordem do fluxo, esta em
+[`docs/contratos/exemplos/`](docs/contratos/exemplos/README.md), e
 o simulador (`scripts/publicar-evento.sh`) esta descrito em [`docs/contratos/README.md`](docs/contratos/README.md).
 
 Atencao a `diagnostico.concluido`: "sem itens" significa **listas vazias**, o que cancela a OS

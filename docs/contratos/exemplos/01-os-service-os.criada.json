@@ -1,0 +1,9 @@
+{
+  "eventId": "00000000-0000-0000-0000-000000000000",
+  "tipo": "os.criada",
+  "versao": 1,
+  "osId": 0,
+  "correlationId": "00000000-0000-0000-0000-000000000000",
+  "ocorridoEm": "2026-01-01T00:00:00Z",
+  "payload": { "numero": 1001, "clienteId": 42, "veiculoId": 77, "problemaRelatado": "Barulho ao frear" }
+}

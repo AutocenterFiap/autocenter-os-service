@@ -62,8 +62,9 @@ kustomize embutido no `kubectl`.
 
 Se editar o workflow, mantenha essas tres regras. Um `kubectl apply` sem `--context` aplicaria na AWS.
 
-Pre-requisitos no cluster (o workflow nao os cria): o cluster de `autocenter-k8s-infra` no ar e o Secret
-`os-service-secrets` criado a mao (ver `docs/contratos/README.md`).
+Pre-requisitos no cluster (o workflow nao os cria): o cluster de `autocenter-k8s-infra` no ar, o Secret
+`os-service-secrets` criado a mao e o banco criado por `scripts/criar-banco.sh` (ver `docs/contratos/README.md`). O
+workflow aplica so `k8s/app` e falha se o `os-mysql` nao existir: ele nunca cria, reinicia nem apaga o banco.
 
 ## 6. Confirmar que o merge dispara o deploy
 
@@ -76,5 +77,5 @@ kubectl --context kind-autocenter -n autocenter get deploy os-service \
 ```
 A imagem deve ser `os-service:<sha do commit do merge>`. A tag `local` nos manifestos so vale para uso manual.
 
-O deploy nao e commitado: o workflow troca a tag numa copia temporaria de `k8s/`. O grupo de `concurrency` serializa
+O deploy nao e commitado: o workflow troca a tag numa copia temporaria de `k8s/app/`. O grupo de `concurrency` serializa
 deploys (sem cancelar o que esta em andamento), porque o `Recreate` nao pode se sobrepor.
