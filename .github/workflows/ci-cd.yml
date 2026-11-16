@@ -54,7 +54,7 @@ jobs:
       - name: Verify e analise Sonar
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: mvn -B verify sonar:sonar
+        run: mvn -B verify sonar:sonar -Dsonar.qualitygate.wait=${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
 
   deploy:
     name: deploy (${{ github.ref_name }})
