@@ -57,6 +57,15 @@ kubectl --context kind-autocenter apply -k k8s
 kubectl --context kind-autocenter -n autocenter rollout status deploy/os-service --timeout=180s
 ```
 
+**Deploy pelo pipeline** (`ci-cd.yml`, job `deploy`, runner self-hosted): roda depois do build e do Sonar, em push
+na `main` ou na `homologacao`, com `scripts/deploy-kind.sh <cluster> <tag>`. O Secret `os-service-secrets` e criado
+manualmente uma vez em cada cluster (o script aborta se ele nao existir).
+
+| Branch | Cluster kind | GitHub Environment |
+|---|---|---|
+| `main` | `autocenter` (`kind-autocenter`) | `producao` |
+| `homologacao` | `autocenter-qa` (`kind-autocenter-qa`) | `homologacao` |
+
 ## Swagger
 
 O Ingress expoe apenas `/v1/ordem-servicos`, entao o Swagger **nao** sai pelo Ingress (`http://localhost/swagger-ui/...`
