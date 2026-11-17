@@ -1,55 +1,183 @@
-# AutoCenter - OS Service
+# AutoCenter FIAP — OS Service (Ordem de Serviço)
 
-Microsservico de Ordem de Servico do AutoCenter (FIAP Tech Challenge, Fase 4). Ele e o **orquestrador da Saga** que
-conduz a OS da abertura a entrega, comandando o Billing e a Execucao por Kafka.
+[![CI/CD](https://github.com/AutocenterFiap/autocenter-os-service/actions/workflows/ci-cd.yml/badge.svg?branch=main)](https://github.com/AutocenterFiap/autocenter-os-service/actions/workflows/ci-cd.yml)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=AutocenterFiap_autocenter-os-service&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=AutocenterFiap_autocenter-os-service)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=AutocenterFiap_autocenter-os-service&metric=coverage)](https://sonarcloud.io/summary/new_code?id=AutocenterFiap_autocenter-os-service)
 
-Equipe: **Felipe** (OS Service), **Willian** (Billing), **Matheus** (Execucao).
+Microsserviço de **Ordem de Serviço** do AutoCenter FIAP (Tech Challenge SOAT, Fase 4). Abre a OS, guarda seu status e
+histórico e é o **orquestrador da Saga**: decide cada passo do fluxo e comanda o Billing e a Execução pelo Kafka.
 
-## Por que Saga orquestrada
+## Ecossistema
 
-O fluxo tem muitos passos, compensacoes (estorno) e prazo de pagamento. Com um ponto central decidindo o proximo passo,
-o estado de cada OS fica visivel num so lugar, o que facilita rastrear e demonstrar as falhas. Os participantes executam
-um comando e publicam o resultado, sem reagir aos eventos uns dos outros. O custo e o acoplamento das regras do fluxo ao
-OS Service. Detalhes em [`docs/arquitetura.md`](docs/arquitetura.md).
+| Repositório | Responsabilidade | Banco |
+|---|---|---|
+| **autocenter-os-service** (este) | Abertura, status e histórico da OS; orquestração da Saga | MySQL 8 |
+| [autocenter-billing-service](https://github.com/AutocenterFiap/autocenter-billing-service) | Orçamento, cobrança e pagamento (Mercado Pago) | MySQL 8 |
+| [auto-center-execucao](https://github.com/AutocenterFiap/auto-center-execucao) | Fila da oficina, diagnóstico e reparo | MongoDB |
+| [autocenter-k8s-infra](https://github.com/AutocenterFiap/autocenter-k8s-infra) | Clusters kind, Kafka, Ingress e Kafka UI | — |
+
+Nenhum serviço acessa o banco de outro: toda a integração passa pelo Kafka.
+
+## Responsabilidades
+
+- Abrir a OS (`POST /v1/ordem-servicos`) e publicar `os.criada`.
+- Manter o status da OS e o histórico de cada transição.
+- Conduzir a Saga: enviar comandos ao Billing e à Execução e reagir aos eventos de resultado.
+- Disparar as compensações (estorno, cancelamento) quando uma etapa falha.
+
+## Saga Pattern: por que orquestrada
+
+O fluxo tem muitos passos, compensações (estorno) e prazo de pagamento. Com um ponto central decidindo o próximo passo:
+
+- o estado de cada OS fica visível em um só lugar (tabela `saga_os`), o que facilita rastrear e demonstrar falhas;
+- Billing e Execução não se conhecem: cada um executa um comando e publica o resultado;
+- as regras de compensação ficam juntas, em uma máquina de estados testável
+  (`domain/saga/MaquinaEstadosSaga.java`).
+
+O custo é concentrar as regras do fluxo no OS Service. Na coreografia, cada serviço reagiria aos eventos dos outros e o
+fluxo ficaria espalhado, mais difícil de seguir e de compensar.
 
 ```mermaid
 flowchart LR
-    A[Atendente] -->|REST| GW[API Gateway] --> OS[OS Service]
-    OS -->|REST| CAD[Cadastro - stub]
+    A[Atendente] -->|REST + JWT| ING[Ingress NGINX] --> OS[OS Service]
+    OS --- DB[(MySQL<br/>OS, saga, outbox)]
     OS -->|billing.comandos| K{{Kafka}}
     OS -->|execucao.comandos| K
     OS -->|os.eventos| K
     K -->|billing.comandos, os.eventos| B[Billing]
-    K -->|execucao.comandos, os.eventos| E[Execucao]
+    K -->|execucao.comandos, os.eventos| E[Execução]
     B -->|billing.eventos| K
     E -->|execucao.eventos| K
     K -->|billing.eventos, execucao.eventos| OS
-    OS --- DB[(MySQL: OS, saga, outbox)]
+    B --- DBB[(MySQL)]
+    E --- DBE[(MongoDB)]
 ```
 
-## Como rodar
+### Fluxo principal
 
-**Testes:** `mvn -B verify` (precisa de Docker: Testcontainers sobe MySQL e Kafka).
+```mermaid
+sequenceDiagram
+    participant OS as OS Service
+    participant E as Execução
+    participant B as Billing
+    OS->>E: os.criada
+    E-->>OS: diagnostico.iniciado / diagnostico.concluido (itens)
+    OS->>B: billing.gerar-orcamento
+    B-->>OS: orcamento.gerado → orcamento.aprovado
+    OS->>B: billing.gerar-cobranca
+    B-->>OS: pagamento.link-gerado → pagamento.confirmado
+    OS->>E: execucao.iniciar-reparo
+    E-->>OS: execucao.iniciada → execucao.finalizada
+    OS->>OS: CONCLUIDA → ENTREGUE (POST /entregar)
+```
 
-**Local com docker-compose.** `SISTEMA_SEGURANCA_CHAVE_SECRETA` (segredo HS256 do JWT) nao tem valor padrao: sem ela, o
-compose recusa subir e o servico nao inicia. Um valor aleatorio basta para testar; para aceitar tokens reais do monolito
-ele precisa ser o mesmo segredo (ver [`docs/contratos/README.md`](docs/contratos/README.md)).
+### Compensações
+
+| Falha | Reação do orquestrador |
+|---|---|
+| Diagnóstico sem itens ou `orcamento.falhou` | Cancela a OS (`os.cancelada`) |
+| `orcamento.reprovado` | Encerra a OS em `ORCAMENTO_REPROVADO`, sem reparo |
+| Pagamento recusado | Gera nova cobrança; na 3ª recusa, cancela |
+| Link de pagamento vencido | Agendador (a cada 30 s) cancela a OS |
+| `execucao.falhou` após o pagamento | `AGUARDANDO_ESTORNO` → `billing.estornar-pagamento` → `CANCELADA` após `pagamento.estornado` |
+| Pagamento confirmado em OS já cancelada | Mantém a OS e manda estornar |
+| `pagamento.estorno-falhou` | Mantém em `AGUARDANDO_ESTORNO`; `POST /{id}/reprocessar-estorno` reenvia |
+
+Estados, diagrama de transições, outbox, idempotência e limites aceitos estão em
+[`docs/arquitetura.md`](docs/arquitetura.md).
+
+## Arquitetura do serviço
+
+Arquitetura hexagonal; o domínio não depende de Spring.
+
+```
+domain/          OS, itens, máquina de estados da Saga
+application/     casos de uso e portas
+adapter/         REST e consumidores Kafka
+infrastructure/  JPA/MySQL, outbox, segurança (JWT), configuração
+```
+
+**Confiabilidade**
+
+- **Outbox transacional:** a mudança de status e a mensagem de saída são gravadas na mesma transação (tabela `outbox`).
+- **Consumidor idempotente:** o `eventId` de cada mensagem é gravado em `mensagem_processada`; repetições são ignoradas.
+- **Ordem por OS:** a chave Kafka é o `osId`.
+- **DLT:** erro técnico tem 3 retentativas (1 s, 2 s, 4 s) e depois vai para `<tópico>.dlt`; mensagem malformada vai
+  direto para a DLT.
+
+**Stack:** Java 21, Spring Boot 3.3.4, Spring Data JPA + Flyway, Spring for Apache Kafka, Spring Security (JWT HS256),
+springdoc-openapi, Micrometer/Prometheus, JUnit 5, Testcontainers, Cucumber, JaCoCo.
+
+## Contrato de mensagens
+
+Envelope comum a todos os serviços (chave Kafka = `osId`):
+
+```json
+{ "eventId": "uuid", "tipo": "os.criada", "versao": 1, "osId": 123,
+  "correlationId": "uuid", "ocorridoEm": "2026-01-01T00:00:00Z", "payload": {} }
+```
+
+| Direção | Tópico | Tipos |
+|---|---|---|
+| Publica | `os.eventos` | `os.criada`, `os.cancelada`, `os.concluida`, `os.entregue` |
+| Publica | `billing.comandos` | `billing.gerar-orcamento`, `billing.gerar-cobranca`, `billing.estornar-pagamento` |
+| Publica | `execucao.comandos` | `execucao.iniciar-reparo` |
+| Consome | `billing.eventos` | `orcamento.*`, `pagamento.*` |
+| Consome | `execucao.eventos` | `diagnostico.*`, `execucao.*` |
+
+Há um JSON de exemplo por tipo em [`docs/contratos/exemplos/`](docs/contratos/exemplos) e um simulador de eventos
+(`scripts/publicar-evento.sh`) descrito em [`docs/contratos/README.md`](docs/contratos/README.md).
+
+Em `diagnostico.concluido`, "sem itens" significa **listas vazias** (`{ "itens": { "servicos": [], "produtos": [] } }`),
+o que cancela a OS. Um `{ "itens": {} }` é mensagem inválida e vai para a DLT.
+
+## API REST
+
+Todas as rotas exigem `Authorization: Bearer <jwt>` (HS256, issuer `Auto Center Fiap`). Para gerar um token de teste:
+`scripts/gerar-token.sh`.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| `POST` | `/v1/ordem-servicos` | Abre a OS e inicia a Saga |
+| `GET` | `/v1/ordem-servicos` | Lista as OS |
+| `GET` | `/v1/ordem-servicos/{id}` | Detalha a OS |
+| `GET` | `/v1/ordem-servicos/numero/{numero}` | Busca pelo número |
+| `GET` | `/v1/ordem-servicos/status/{id}` | Status atual |
+| `GET` | `/v1/ordem-servicos/{id}/historico` | Histórico de transições |
+| `POST` | `/v1/ordem-servicos/{id}/entregar` | Entrega a OS concluída |
+| `POST` | `/v1/ordem-servicos/{id}/cancelar` | Cancela antes de `EM_EXECUCAO` |
+| `POST` | `/v1/ordem-servicos/{id}/reprocessar-estorno` | Reenvia o comando de estorno |
+
+**Swagger:** `http://localhost:8098/swagger-ui/index.html` (OpenAPI em `/v3/api-docs`, público). No cluster, o Ingress
+expõe só `/v1/ordem-servicos`; para o Swagger, use port-forward:
+
+```bash
+kubectl --context kind-autocenter -n autocenter port-forward svc/os-service 8098:8098
+```
+
+## Como executar
+
+**Pré-requisitos:** JDK 21, Maven 3.9+, Docker. Para o cluster: `kind` e `kubectl`.
+
+O segredo do JWT (`SISTEMA_SEGURANCA_CHAVE_SECRETA`) não tem valor padrão; sem ele o serviço não sobe:
+
 ```bash
 export SISTEMA_SEGURANCA_CHAVE_SECRETA="$(openssl rand -hex 32)"
 ```
-Com o servico pelo Maven (so MySQL e Kafka no compose):
+
+**Local (MySQL e Kafka no docker-compose):**
+
 ```bash
 docker compose -f docker/docker-compose.yml up -d mysql kafka kafka-topicos
-mvn spring-boot:run          # porta 8098; perfil demo: -Dspring-boot.run.profiles=demo (link expira em 2 min)
-```
-Ou tudo em containers, inclusive o servico (imagem com perfil `prod`, logs em JSON, tambem na porta 8098):
-```bash
-docker compose -f docker/docker-compose.yml up -d --build
+mvn spring-boot:run          # http://localhost:8098
 ```
 
-**No cluster kind** (infra em `autocenter-k8s-infra`: `./scripts/criar-cluster.sh`). Todo comando usa
-`--context kind-autocenter`, porque o contexto padrao desta maquina e um EKS real. Passo a passo completo (Secret,
-imagem, apply, simulador de eventos) em [`docs/contratos/README.md`](docs/contratos/README.md):
+Para subir tudo em containers, inclusive o serviço: `docker compose -f docker/docker-compose.yml up -d --build`.
+
+**No cluster kind** (criado pelo [autocenter-k8s-infra](https://github.com/AutocenterFiap/autocenter-k8s-infra)). Use
+sempre `--context` explícito. O Secret `os-service-secrets` é criado uma vez por cluster
+([`docs/contratos/README.md`](docs/contratos/README.md)):
+
 ```bash
 docker build -f docker/Dockerfile -t os-service:local .
 kind load docker-image os-service:local --name autocenter
@@ -57,61 +185,82 @@ kubectl --context kind-autocenter apply -k k8s
 kubectl --context kind-autocenter -n autocenter rollout status deploy/os-service --timeout=180s
 ```
 
-**Deploy pelo pipeline** (`ci-cd.yml`, job `deploy`, runner self-hosted): roda depois do build e do Sonar, em push
-na `main` ou na `homologacao`, com `scripts/deploy-kind.sh <cluster> <tag>`. O Secret `os-service-secrets` e criado
-manualmente uma vez em cada cluster (o script aborta se ele nao existir).
+## Testes e cobertura
+
+```bash
+mvn -B verify    # unitários + integração + BDD; requer Docker (Testcontainers: MySQL e Kafka)
+```
+
+- **Unitários** (Surefire): domínio, máquina de estados, casos de uso, controllers e consumidores.
+- **Integração** (Failsafe): Testcontainers com MySQL e Kafka reais.
+- **BDD** (Cucumber, [`saga.feature`](src/test/resources/features/saga.feature)): 7 cenários da Saga, entre eles fluxo
+  completo até a entrega, três recusas de pagamento, link expirado, orçamento reprovado, falha na execução com estorno
+  e pagamento atrasado.
+- **Gate:** o build falha com menos de 80% de cobertura de linhas (JaCoCo).
+
+**Evidência** (`mvn -B verify`, 16/11/2026, BUILD SUCCESS):
+
+| Métrica | Cobertas / total | % |
+|---|---|---|
+| Linhas | 816 / 829 | 98,4 |
+| Branches | 268 / 285 | 94,0 |
+| Instruções | 4297 / 4354 | 98,7 |
+| Métodos | 240 / 243 | 98,8 |
+
+Testes: 262, todos passando (207 unitários e 55 de integração e BDD). Fora da medição: `OsServiceApplication`, DTOs e
+entidades JPA. Relatório HTML em `target/site/jacoco/index.html`, publicado como artefato `jacoco` em cada
+execução do pipeline. Análise contínua no [SonarCloud](https://sonarcloud.io/summary/new_code?id=AutocenterFiap_autocenter-os-service).
+
+<!-- TODO: adicionar print do SonarCloud em docs/img/sonar.png -->
+
+## CI/CD
+
+Pipeline único em [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml):
+
+```mermaid
+flowchart LR
+    PR[PR ou push] --> BT[build-test<br/>unitários, integração, BDD, JaCoCo]
+    BT --> SQ[sonar<br/>SonarCloud + Quality Gate]
+    SQ -->|push em main ou homologacao| DP[deploy<br/>runner self-hosted]
+    DP --> KIND[(cluster kind)]
+```
+
+O job `deploy` roda `scripts/deploy-kind.sh <cluster> <sha>`: build da imagem com a tag do commit, `kind load`,
+`kubectl apply -k` e espera do rollout.
 
 | Branch | Cluster kind | GitHub Environment |
 |---|---|---|
-| `main` | `autocenter` (`kind-autocenter`) | `producao` |
-| `homologacao` | `autocenter-qa` (`kind-autocenter-qa`) | `homologacao` |
+| `main` | `autocenter` | `producao` |
+| `homologacao` | `autocenter-qa` | `homologacao` |
 
-## Swagger
+**Fluxo de branches:** `feat/*` → PR para `homologacao` → PR para `main`. As duas branches são protegidas: merge só por
+PR, com os checks `build-test` e `sonar` passando.
 
-O Ingress expoe apenas `/v1/ordem-servicos`, entao o Swagger **nao** sai pelo Ingress (`http://localhost/swagger-ui/...`
-da 404). No cluster, use port-forward; o Swagger e a documentacao OpenAPI sao publicos, sem token:
-```bash
-kubectl --context kind-autocenter -n autocenter port-forward svc/os-service 8098:8098
-# http://localhost:8098/swagger-ui/index.html      (OpenAPI em /v3/api-docs)
-```
-Para chamar as rotas pelo "Authorize" do Swagger, gere um token com `scripts/gerar-token.sh`. Rodando local
-(`mvn spring-boot:run`) o endereco e o mesmo.
+## Observabilidade
 
-## Evidencias de cobertura
+- `/actuator/health` (liveness e readiness) e `/actuator/prometheus`, públicos para as probes.
+- Logs em JSON (`logback-spring.xml`) com `correlationId` no MDC, propagado no envelope de cada mensagem.
+- Métricas de negócio no Prometheus: `autocenter.os.criada.total`, `autocenter.os.status.total`,
+  `autocenter.saga.compensada.total`, `autocenter.saga.estorno_falhou.total`, `autocenter.saga.evento_descartado.total`
+  e `autocenter.saga.mensagem_dlt.total`.
+- Tracer Datadog (`dd-java-agent`) embutido na imagem, com anotações de autodiscovery no Deployment; o agente é
+  instalado pelo [autocenter-k8s-infra](https://github.com/AutocenterFiap/autocenter-k8s-infra#datadog).
 
-Resultado de `mvn -B verify` (BUILD SUCCESS, gate de 80% de linhas do JaCoCo atendido), medido em
-`target/site/jacoco/jacoco.xml`, com unitarios, integracao e BDD no mesmo relatorio:
+## Limitações conhecidas
 
-| Metrica | Cobertas / total | % |
+- **Uma réplica** com `strategy: Recreate`: o relay do outbox não foi desenhado para várias instâncias.
+- **DLT sem reprocessamento automático:** a mensagem é reenviada manualmente (Kafka UI ou CLI).
+- **Dependência síncrona do Cadastro:** abrir OS consulta o [Cadastro Service](https://github.com/AutocenterFiap/autocenter-cadastro-service)
+  por REST (`GET /v1/clientes/{id}` e `GET /v1/veiculos/{id}`, com o JWT da requisição repassado). Cliente que não
+  existe ou não está `ATIVO`, ou veículo inexistente, dá 404. Cadastro fora do ar ou com erro dá 503, e a OS não é
+  criada. Para rodar local sem o Cadastro: `CADASTRO_MODO=stub` (aceita qualquer ID).
+
+## Equipe
+
+<!-- TODO: completar nomes e RMs -->
+
+| Nome | RM | Responsabilidade |
 |---|---|---|
-| Linhas | 816 / 829 | 98,4 |
-| Instrucoes | 4297 / 4354 | 98,7 |
-| Branches | 268 / 285 | 94,0 |
-| Metodos | 240 / 243 | 98,8 |
-
-Testes: 207 unitarios (Surefire) e 55 de integracao e BDD (Failsafe: Testcontainers com MySQL e Kafka, mais os cenarios
-Cucumber da Saga), todos passando. Excluidos da medicao: `OsServiceApplication`, DTOs e entidades JPA.
-
-## Contrato de mensagens
-
-Um
-exemplo JSON por tipo publicado por Billing e Execucao esta em [`docs/contratos/exemplos/`](docs/contratos/exemplos), e
-o simulador (`scripts/publicar-evento.sh`) esta descrito em [`docs/contratos/README.md`](docs/contratos/README.md).
-
-Atencao a `diagnostico.concluido`: "sem itens" significa **listas vazias**, o que cancela a OS
-(`DIAGNOSTICO_SEM_ITENS`):
-```json
-{ "itens": { "servicos": [], "produtos": [] } }
-```
-Um `{ "itens": {} }` (campos ausentes) e mensagem invalida: nao e retentada e vai para a DLT (`execucao.eventos.dlt`).
-
-## O que ainda nao foi validado
-
-- Entrega real de traces e metricas ao Datadog: o tracer esta na imagem, mas `DD_TRACE_ENABLED=false` e nao ha agente
-  no cluster.
-- O pipeline no GitHub: `.github/workflows/ci-cd.yml` nunca rodou (passou por `actionlint`, mas nao foi executado).
-  Passos manuais em [`docs/setup-github.md`](docs/setup-github.md). O projeto no SonarCloud
-  (`AutocenterFiap_autocenter-os-service`) ja foi criado, mas ainda nao recebeu nenhuma analise; a configuracao fica
-  so no `pom.xml`.
-- Integracao com o Billing e a Execucao reais: so foi testada com dubles nos testes e com o simulador de eventos.
-- O Cadastro esta em stub (`cadastro.modo=stub`): qualquer cliente e veiculo sao aceitos.
+| Felipe | RM | OS Service e infraestrutura |
+| Willian | RM | Billing Service |
+| Matheus | RM | Execução |

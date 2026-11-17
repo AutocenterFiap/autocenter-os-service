@@ -1,0 +1,3 @@
+# Carregado por cima do application.yml principal so nos testes: a maioria dos ITs nao tem Cadastro rodando.
+cadastro:
+  modo: stub
