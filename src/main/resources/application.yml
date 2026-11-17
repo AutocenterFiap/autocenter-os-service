@@ -50,7 +50,8 @@ saga:
     max-tentativas: 3
 
 cadastro:
-  modo: stub
+  modo: ${CADASTRO_MODO:rest}
+  url: ${CADASTRO_URL:http://localhost:8097}
 
 sistema:
   seguranca:

@@ -6,6 +6,7 @@ metadata:
 data:
   DB_URL: "jdbc:mysql://os-mysql:3306/os_service?useSSL=false&allowPublicKeyRetrieval=true"
   KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  CADASTRO_URL: "http://cadastro-service.autocenter.svc.cluster.local:8097"
   DD_TRACE_ENABLED: "false"
   DD_INSTRUMENTATION_TELEMETRY_ENABLED: "false"
   DD_ENV: "prod"

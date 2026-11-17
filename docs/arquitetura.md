@@ -7,7 +7,9 @@ Este documento resume o desenho. A tabela de transicoes esta implementada em
 
 Arquitetura hexagonal, com os pacotes `domain` (OS, itens, maquina de estados), `application` (casos de uso e
 portas), `adapter` (REST e Kafka de entrada) e `infrastructure` (JPA/MySQL, outbox, seguranca, configuracao).
-O dominio nao conhece Spring. O Cadastro fica atras de `CadastroPort`, hoje com um stub (`cadastro.modo=stub`).
+O dominio nao conhece Spring. O Cadastro fica atras de `CadastroPort`: o `CadastroRestAdapter` consulta o Cadastro Service (`cadastro.modo=rest`,
+URL em `cadastro.url`/`CADASTRO_URL`, timeouts de 2 s para conectar e 3 s para ler); o stub (`cadastro.modo=stub`)
+sobra para rodar local e para os testes.
 
 ## Estados da OS
 
@@ -70,4 +72,5 @@ Alem disso, `POST /{id}/cancelar` cancela qualquer OS antes de `EM_EXECUCAO`.
   atrasado, que estorna.
 - **Estornos simultaneos:** ha uma unica vaga de estorno pendente. Um segundo estorno simultaneo gera so alerta; o comando
   sai, mas a vaga do primeiro nao e sobrescrita, e a API `reprocessar-estorno` nao o reprocessa.
-- **Cadastro em stub:** qualquer `clienteId` e `veiculoId` e aceito.
+- **Cadastro sincrono:** se o Cadastro Service cair, nenhuma OS e aberta (503). OSs ja abertas seguem a Saga normalmente,
+  porque so a abertura consulta o Cadastro.
