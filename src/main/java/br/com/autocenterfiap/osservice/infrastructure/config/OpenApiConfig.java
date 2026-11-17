@@ -17,9 +17,13 @@ public class OpenApiConfig {
     OpenAPI openApi() {
         return new OpenAPI()
                 .info(new Info().title("AutoCenter - OS Service").version("1.0.0")
-                        .description("Orquestrador da Saga das ordens de servico"))
+                        .description("Abertura e acompanhamento das ordens de serviço. Orquestra a Saga "
+                                + "coreografada com Billing e Execução por eventos Kafka e consulta clientes, "
+                                + "veículos e catálogo no serviço de Cadastro."))
                 .components(new Components().addSecuritySchemes(ESQUEMA,
-                        new SecurityScheme().type(SecurityScheme.Type.HTTP).scheme("bearer").bearerFormat("JWT")))
+                        new SecurityScheme().type(SecurityScheme.Type.HTTP).scheme("bearer").bearerFormat("JWT")
+                                .description("JWT emitido pelo serviço de autenticação. Funcionários usam o perfil "
+                                        + "interno; clientes acessam apenas a consulta de status das próprias OS.")))
                 .addSecurityItem(new SecurityRequirement().addList(ESQUEMA));
     }
 }
