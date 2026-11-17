@@ -1,5 +1,6 @@
 package br.com.autocenterfiap.osservice.adapter.in.rest;
 
+import br.com.autocenterfiap.osservice.application.exception.CadastroIndisponivelException;
 import br.com.autocenterfiap.osservice.application.exception.CadastroNaoEncontradoException;
 import br.com.autocenterfiap.osservice.application.exception.OSJaEmAndamentoException;
 import br.com.autocenterfiap.osservice.application.exception.OrdemServicoNaoEncontradaException;
@@ -34,6 +35,12 @@ public class ErroHandler {
     @ExceptionHandler(CadastroNaoEncontradoException.class)
     public ResponseEntity<Map<String, String>> naoEncontrado(CadastroNaoEncontradoException e) {
         return resposta(HttpStatus.NOT_FOUND, "nao_encontrado", e.getMessage());
+    }
+
+    @ExceptionHandler(CadastroIndisponivelException.class)
+    public ResponseEntity<Map<String, String>> cadastroIndisponivel(CadastroIndisponivelException e) {
+        return resposta(HttpStatus.SERVICE_UNAVAILABLE, "cadastro_indisponivel",
+                "Cadastro indisponivel; tente novamente em instantes");
     }
 
     @ExceptionHandler(OSJaEmAndamentoException.class)

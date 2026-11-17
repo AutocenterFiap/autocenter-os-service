@@ -23,8 +23,10 @@ antes o push de uma `main` inicial). O PR dispara `build-test` e `sonar`.
 
 ## 3. SonarCloud
 
-A configuracao do Sonar fica so no `pom.xml` (`sonar.host.url`, `sonar.organization`, `sonar.projectKey`, cobertura do
-JaCoCo e `sonar.qualitygate.wait`); o job `sonar` do CI roda apenas `mvn -B verify sonar:sonar`. O projeto
+A configuracao do Sonar fica no `pom.xml` (`sonar.host.url`, `sonar.organization`, `sonar.projectKey` e cobertura do
+JaCoCo). O job `sonar` do CI roda `mvn -B verify sonar:sonar` e so espera o Quality Gate em PR e na `main`: no plano
+gratuito o SonarCloud recusa consultar o Quality Gate de outras branches (como a `homologacao`), que entram sempre por
+PR ja aprovado. O projeto
 `AutocenterFiap_autocenter-os-service` ja existe no SonarCloud. Se a chave da organizacao for outra, troque so
 `sonar.organization` no `pom.xml`.
 
