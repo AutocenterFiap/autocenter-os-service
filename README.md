@@ -245,6 +245,7 @@ PR, com os checks `build-test` e `sonar` passando.
   e `autocenter.saga.mensagem_dlt.total`.
 - Tracer Datadog (`dd-java-agent`) embutido na imagem, com anotações de autodiscovery no Deployment; o agente é
   instalado pelo [autocenter-k8s-infra](https://github.com/AutocenterFiap/autocenter-k8s-infra#datadog).
+- Os dashboards do Datadog estão versionados em [`/docs`](./docs/), contendo arquivos `.json` importáveis diretamente na plataforma Datadog.
 
 ## Limitações conhecidas
 
