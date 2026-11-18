@@ -66,6 +66,16 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.hostIP
+            - name: DD_ENV
+              value: "kind"
+            - name: DD_LOGS_INJECTION
+              value: "true"
+            - name: DD_TRACE_ENABLED
+              value: "true"
+            - name: DD_TRACE_SAMPLE_RATE
+              value: "1"
+            - name: DD_TRACE_SAMPLING_RULES
+              value: '[{"sample_rate":1.0}]'
             - name: DB_USERNAME
               valueFrom:
                 secretKeyRef: {name: os-service-secrets, key: DB_USERNAME}
